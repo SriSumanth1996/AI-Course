@@ -4,7 +4,7 @@ from html import escape
 from pathlib import Path
 
 import streamlit as st
-import streamlit.components.v1 as components
+from lectures import LECTURES, SUB_LECTURES, TOPICS, get_lecture
 
 ROOT = Path(__file__).resolve().parent
 ASSETS = ROOT / "assets"
@@ -15,17 +15,37 @@ BITSOM_LOGO = (
     "https://www.bitsom.edu.in/wp-content/uploads/2023/04/zero_scroll_logo-icn-1.svg"
 )
 
-LECTURES = [f"Lecture {n}" for n in range(1, 11)]
-SUB_LECTURES = {
-    "Lecture 5": ["Tokenisation", "Input context", "Post Training"],
-}
-TOPICS = {
-    ("Lecture 5", "Post Training"): [
-        "Base Model",
-        "Fine-tuned Model",
-        "RLHF-aligned Model",
-    ],
-}
+
+def lecture_number(lecture: str | None) -> int | None:
+    if not lecture:
+        return None
+    token = lecture.split()[-1]
+    return int(token) if token.isdigit() else None
+
+
+def header_host(lecture: str | None) -> str | None:
+    number = lecture_number(lecture)
+    if number is None:
+        return None
+    if 1 <= number <= 3:
+        return "Dr. Meensakhi Balakrishna"
+    if 4 <= number <= 10:
+        return "Dr. Rachit Kamdar"
+    return None
+
+
+def header_greeting_html(lecture: str | None) -> str:
+    host = header_host(lecture)
+    if not host:
+        return ""
+    return (
+        '<div class="lecture-header-cards">'
+        '<div class="lecture-header-card">'
+        f'<div class="lecture-header-greeting-hi">Hi {escape(host)}!</div>'
+        '<div class="lecture-header-greeting-wish">Welcome to your teaching space</div>'
+        "</div>"
+        "</div>"
+    )
 
 
 def inject_css() -> None:
@@ -36,31 +56,82 @@ def inject_css() -> None:
         """
         <script>
         (function () {
-          if (window.__crumbForward) return;
+          if (window.__lectureChrome === 32) return;
+          window.__lectureChrome = 32;
           window.__crumbForward = true;
-          document.addEventListener("click", function (e) {
-            var crumb = e.target.closest(".crumb-link");
-            if (!crumb) return;
-            e.preventDefault();
-            var level = crumb.getAttribute("data-level") || "lecture";
-            var btn = document.querySelector('[class*="st-key-crumb_' + level + '"] button');
-            if (btn) btn.click();
-          }, true);
-        })();
-        </script>
-        """,
-        unsafe_allow_javascript=True,
-    )
+          window.__rlhfForward = true;
 
+          function clickHidden(key) {
+            if (!key) return false;
+            var nodes = document.querySelectorAll('[class*="st-key-' + key + '"]');
+            for (var i = 0; i < nodes.length; i++) {
+              var node = nodes[i];
+              var btn = node.tagName === "BUTTON" ? node : node.querySelector("button");
+              if (btn) {
+                btn.click();
+                return true;
+              }
+            }
+            if (key === "rlhf_ctrl_ok") {
+              var submit = document.querySelector(
+                '[class*="st-key-rlhf_ctrl_form"] button, [data-testid="stFormSubmitButton"] button'
+              );
+              if (submit) {
+                submit.click();
+                return true;
+              }
+            }
+            return false;
+          }
 
-def lock_dropdowns() -> None:
-    components.html(
-        """
-        <script>
-        (function () {
-          const root = window.parent.document;
-          const win = root.defaultView;
-          const allow = new Set(["ArrowDown", "ArrowUp", "Enter", "Escape", "Tab", "Home", "End"]);
+          function activePick(menu, kind) {
+            var active = menu.querySelector('[data-rlhf-pick="' + kind + '"].is-active');
+            if (active) return active.getAttribute("data-rlhf-value");
+            var current = menu.querySelector('[data-rlhf-row="' + kind + '"] .rlhf-control-current');
+            if (current) {
+              var text = (current.textContent || "").trim();
+              if (text) return text;
+            }
+            return "Auto";
+          }
+
+          function collectRlhfDraft(menu) {
+            var draft = {
+              output_length: activePick(menu, "tok"),
+              reasoning: activePick(menu, "rsn"),
+              verbosity: activePick(menu, "vrb"),
+              temperature: null
+            };
+            var tempEnabled = menu.querySelector("[data-temp-enabled]");
+            var tempVisible = !tempEnabled || tempEnabled.style.display !== "none";
+            var manual = menu.querySelector('[data-rlhf-temp-mode="Manual"].is-active');
+            var tempCurrent = menu.querySelector('[data-rlhf-row="tmp"] .rlhf-control-current');
+            var tempLabel = tempCurrent ? (tempCurrent.textContent || "").trim() : "";
+            if (tempVisible && manual) {
+              var rangeEl = menu.querySelector("[data-rlhf-temp-range]");
+              draft.temperature = rangeEl ? parseFloat(rangeEl.value) : 0.7;
+            } else if (tempLabel && tempLabel !== "Auto" && tempLabel !== "Not supported") {
+              var parsed = parseFloat(tempLabel);
+              if (!isNaN(parsed)) draft.temperature = parsed;
+            }
+            return draft;
+          }
+
+          function writeRlhfDraft(draft) {
+            var input = document.querySelector(
+              '[class*="st-key-rlhf_controls_draft"] textarea, ' +
+              '[class*="st-key-rlhf_controls_draft"] input'
+            );
+            if (!input) return false;
+            var proto = input.tagName === "TEXTAREA" ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+            var setter = Object.getOwnPropertyDescriptor(proto, "value").set;
+            setter.call(input, JSON.stringify(draft));
+            input.dispatchEvent(new Event("input", { bubbles: true }));
+            input.dispatchEvent(new Event("change", { bubbles: true }));
+            return true;
+          }
+
+          var allow = { ArrowDown: 1, ArrowUp: 1, Enter: 1, Escape: 1, Tab: 1, Home: 1, End: 1 };
 
           function lockInput(el) {
             el.setAttribute("readonly", "readonly");
@@ -69,13 +140,11 @@ def lock_dropdowns() -> None:
             el.style.caretColor = "transparent";
             if (el.dataset.dropdownLocked === "1") return;
             el.dataset.dropdownLocked = "1";
-
             function block(e) {
-              if (e.type === "keydown" && allow.has(e.key)) return;
+              if (e.type === "keydown" && allow[e.key]) return;
               e.preventDefault();
               e.stopImmediatePropagation();
             }
-
             ["keydown", "keypress", "beforeinput", "paste", "cut", "drop"].forEach(function (type) {
               el.addEventListener(type, block, true);
             });
@@ -88,48 +157,250 @@ def lock_dropdowns() -> None:
               if (select.querySelector("input:disabled")) return;
               if (select.getAttribute("aria-disabled") === "true") return;
               if (e.target.closest("svg")) return;
-
-              const svgs = select.querySelectorAll("svg");
-              let chevron = null;
+              var svgs = select.querySelectorAll("svg");
+              var chevron = null;
               svgs.forEach(function (svg) {
-                const path = svg.querySelector("path");
-                const d = path ? path.getAttribute("d") || "" : "";
+                var path = svg.querySelector("path");
+                var d = path ? path.getAttribute("d") || "" : "";
                 if (d.indexOf("M12 2C6.47") === -1) chevron = svg;
               });
               if (!chevron && svgs.length) chevron = svgs[svgs.length - 1];
               if (!chevron) return;
-
-              const host = chevron.closest("button") || chevron.parentElement;
+              var host = chevron.closest("button") || chevron.parentElement;
               ["mousedown", "mouseup", "click"].forEach(function (type) {
-                host.dispatchEvent(new win.MouseEvent(type, { bubbles: true, cancelable: true, view: win }));
+                host.dispatchEvent(new window.MouseEvent(type, { bubbles: true, cancelable: true, view: window }));
+              });
+            });
+          }
+
+          function fitChatInput(el) {
+            if (el.dataset.fitting === "1") return;
+            el.dataset.fitting = "1";
+            el.style.setProperty("padding", "0px", "important");
+            el.style.setProperty("color", "#111111", "important");
+            el.style.setProperty("-webkit-text-fill-color", "#111111", "important");
+            el.style.setProperty("caret-color", "#111111", "important");
+            el.style.setProperty("height", "auto", "important");
+            var next = el.value ? Math.min(Math.max(el.scrollHeight, 22), 88) : 22;
+            el.style.setProperty("height", next + "px", "important");
+            el.style.setProperty("overflow-y", next >= 88 ? "auto" : "hidden", "important");
+            if (next < 88) el.scrollTop = 0;
+            requestAnimationFrame(function () {
+              el.dataset.fitting = "0";
+            });
+          }
+
+          function wireChatInput(el) {
+            if (el.dataset.chatFit === "1") return;
+            el.dataset.chatFit = "1";
+            ["input", "keyup", "keydown", "change", "paste"].forEach(function (type) {
+              el.addEventListener(type, function () {
+                fitChatInput(el);
+                requestAnimationFrame(function () { fitChatInput(el); });
+              });
+            });
+            fitChatInput(el);
+          }
+
+          function pinThread(el) {
+            if (!el.dataset.chatScrollWired) {
+              el.dataset.chatScrollWired = "1";
+              el.dataset.stickBottom = "1";
+              el.addEventListener("scroll", function () {
+                var gap = el.scrollHeight - el.scrollTop - el.clientHeight;
+                el.dataset.stickBottom = gap < 80 ? "1" : "0";
+              }, { passive: true });
+            }
+            if (el.dataset.stickBottom !== "0") {
+              el.scrollTop = el.scrollHeight;
+            }
+          }
+
+          var fileHint = "Accepts Word, PDF or text only";
+          var fileReject = "Only Word, PDF or text files are accepted.";
+
+          function hintFileUi() {
+            document.querySelectorAll('[data-testid="stChatInputFileUploadButton"]').forEach(function (btn) {
+              btn.setAttribute("aria-label", fileHint);
+            });
+            document.querySelectorAll('[data-testid="stTooltipContent"]').forEach(function (el) {
+              var text = el.textContent || "";
+              if (/Upload or drag|drag and drop|Accepts Word, PDF or text only/i.test(text)) {
+                el.textContent = fileHint;
+                if (el.parentElement) el.parentElement.style.display = "none";
+              }
+            });
+            document.querySelectorAll('[data-testid="stTooltipErrorContent"]').forEach(function (el) {
+              var text = el.textContent || "";
+              if (/not allowed/i.test(text)) el.textContent = fileReject;
+            });
+            document.querySelectorAll('[data-testid="stFileChip"] [role="alert"]').forEach(function (el) {
+              var text = el.textContent || "";
+              if (/not allowed/i.test(text)) el.textContent = "Error: " + fileReject;
+            });
+          }
+
+          function wireTempRange() {
+            document.querySelectorAll("[data-rlhf-temp-range]").forEach(function (el) {
+              if (el.dataset.tempWired === "1") return;
+              el.dataset.tempWired = "1";
+              el.addEventListener("input", function () {
+                var value = parseFloat(el.value).toFixed(1);
+                var readout = el.parentElement && el.parentElement.querySelector(".rlhf-temp-readout");
+                if (readout) readout.textContent = value;
+                var fly = el.closest(".rlhf-control-flyout");
+                var label = fly && fly.querySelector(".rlhf-control-current");
+                if (label) label.textContent = value;
               });
             });
           }
 
           function scan() {
-            root.querySelectorAll('[data-testid="stSelectbox"] input, [data-baseweb="select"] input').forEach(lockInput);
-            root.querySelectorAll('[data-baseweb="select"]').forEach(wireOpenOnClick);
+            document.querySelectorAll('[data-testid="stSelectbox"] input, [data-baseweb="select"] input').forEach(lockInput);
+            document.querySelectorAll('[data-baseweb="select"]').forEach(wireOpenOnClick);
+            document.querySelectorAll('[data-testid="stChatInput"] textarea, [data-testid="stChatInputTextArea"]').forEach(wireChatInput);
+            document.querySelectorAll(".model-chat-thread").forEach(pinThread);
+            hintFileUi();
+            wireTempRange();
           }
 
-          if (!root.documentElement.dataset.crumbForward) {
-            root.documentElement.dataset.crumbForward = "1";
-            root.addEventListener("click", function (e) {
-              const crumb = e.target.closest(".crumb-link");
-              if (!crumb) return;
+          document.addEventListener("click", function (e) {
+            var crumb = e.target.closest(".crumb-link");
+            if (crumb) {
               e.preventDefault();
-              const level = crumb.getAttribute("data-level") || "lecture";
-              const btn = root.querySelector('[class*="st-key-crumb_' + level + '"] button');
-              if (btn) btn.click();
+              clickHidden("crumb_" + (crumb.getAttribute("data-level") || "lecture"));
+              return;
+            }
+            if (e.target.closest(".rlhf-bar.is-locked")) {
+              e.preventDefault();
+              return;
+            }
+            var companyOpt = e.target.closest("[data-rlhf-company]");
+            if (companyOpt) {
+              e.preventDefault();
+              clickHidden("rlhf_co_" + companyOpt.getAttribute("data-rlhf-company"));
+              return;
+            }
+            var modeOpt = e.target.closest("[data-rlhf-mode]");
+            if (modeOpt) {
+              e.preventDefault();
+              clickHidden("rlhf_mode_" + modeOpt.getAttribute("data-rlhf-mode"));
+              return;
+            }
+            var modelOpt = e.target.closest("[data-rlhf-model]");
+            if (modelOpt) {
+              e.preventDefault();
+              clickHidden("rlhf_md_" + modelOpt.getAttribute("data-rlhf-model"));
+              return;
+            }
+            var pickOpt = e.target.closest("[data-rlhf-pick]");
+            if (pickOpt) {
+              e.preventDefault();
+              var menu = pickOpt.closest(".rlhf-dd-menu");
+              var kind = pickOpt.getAttribute("data-rlhf-pick") || "";
+              var value = pickOpt.getAttribute("data-rlhf-value") || "";
+              if (menu) {
+                menu.querySelectorAll('[data-rlhf-pick="' + kind + '"]').forEach(function (item) {
+                  item.classList.toggle("is-active", item.getAttribute("data-rlhf-value") === value);
+                });
+                var current = menu.querySelector('[data-rlhf-row="' + kind + '"] .rlhf-control-current');
+                if (current) current.textContent = value;
+                var block = menu.querySelector("[data-temp-policy='reasoning_none']");
+                if (block && kind === "rsn") {
+                  var on = value === "None";
+                  var enabled = block.querySelector("[data-temp-enabled]");
+                  var locked = block.querySelector("[data-temp-locked]");
+                  if (enabled) enabled.style.display = on ? "block" : "none";
+                  if (locked) locked.style.display = on ? "none" : "block";
+                }
+              }
+              return;
+            }
+            var tempMode = e.target.closest("[data-rlhf-temp-mode]");
+            if (tempMode) {
+              e.preventDefault();
+              var tempCard = tempMode.closest(".rlhf-length-card");
+              var mode = tempMode.getAttribute("data-rlhf-temp-mode") || "Auto";
+              if (tempCard) {
+                tempCard.querySelectorAll("[data-rlhf-temp-mode]").forEach(function (item) {
+                  item.classList.toggle("is-active", item === tempMode);
+                });
+                var slider = tempCard.querySelector(".rlhf-temp-slider");
+                if (slider) slider.classList.toggle("is-hidden", mode !== "Manual");
+                var rowCur = tempMode.closest(".rlhf-control-flyout");
+                var label = rowCur && rowCur.querySelector(".rlhf-control-current");
+                if (label) {
+                  if (mode === "Auto") label.textContent = "Auto";
+                  else {
+                    var range = tempCard.querySelector("[data-rlhf-temp-range]");
+                    label.textContent = range ? parseFloat(range.value).toFixed(1) : "0.7";
+                  }
+                }
+              }
+              return;
+            }
+            var okCtrl = e.target.closest("[data-rlhf-ctrl-ok]");
+            if (okCtrl) {
+              e.preventDefault();
+              var okMenu = okCtrl.closest(".rlhf-dd-menu");
+              if (okMenu) {
+                writeRlhfDraft(collectRlhfDraft(okMenu));
+                setTimeout(function () {
+                  clickHidden("rlhf_ctrl_ok");
+                }, 80);
+                setTimeout(function () {
+                  clickHidden("rlhf_ctrl_ok");
+                }, 220);
+              }
+              return;
+            }
+            var flyToggle = e.target.closest("summary.rlhf-control-row");
+            if (flyToggle) {
+              var fly = flyToggle.closest(".rlhf-control-flyout");
+              document.querySelectorAll(".rlhf-control-flyout").forEach(function (el) {
+                if (el !== fly) el.removeAttribute("open");
+              });
+              return;
+            }
+            var clearChat = e.target.closest("[data-rlhf-clear], [data-llama-clear]");
+            if (clearChat) {
+              e.preventDefault();
+              clickHidden(clearChat.hasAttribute("data-llama-clear") ? "llama_clear" : "rlhf_clear");
+              return;
+            }
+            var topToggle = e.target.closest("summary.rlhf-dd-toggle");
+            if (topToggle) {
+              var host = topToggle.closest(".rlhf-dd");
+              document.querySelectorAll(".rlhf-dd").forEach(function (el) {
+                if (el !== host) el.removeAttribute("open");
+              });
+              return;
+            }
+            if (!e.target.closest(".rlhf-dd")) {
+              document.querySelectorAll(".rlhf-dd, .rlhf-control-flyout").forEach(function (el) {
+                el.removeAttribute("open");
+              });
+            }
+          }, true);
+
+          ["input", "keyup", "paste"].forEach(function (type) {
+            document.addEventListener(type, function (e) {
+              var el = e.target && e.target.closest && e.target.closest(
+                '[data-testid="stChatInput"] textarea, [data-testid="stChatInputTextArea"]'
+              );
+              if (el) {
+                fitChatInput(el);
+                requestAnimationFrame(function () { fitChatInput(el); });
+              }
             }, true);
-          }
+          });
 
           scan();
-          new MutationObserver(scan).observe(root.body, { childList: true, subtree: true });
+          new MutationObserver(scan).observe(document.body, { childList: true, subtree: true });
         })();
         </script>
         """,
-        height=0,
-        width=0,
+        unsafe_allow_javascript=True,
     )
 
 
@@ -183,83 +454,8 @@ def render_crumbs(lecture: str | None, sub_lecture: str | None, topic: str | Non
         )
 
 
-ASSISTANT_MARK = (
-    '<svg viewBox="0 0 24 24" aria-hidden="true">'
-    '<path fill="#111111" d="M22.2819 9.8211a5.9847 5.9847 0 0 0-.5157-4.9108 6.0462 6.0462 0 0 0-6.5098-2.9A6.0651 6.0651 0 0 0 4.9807 4.1818a5.9847 5.9847 0 0 0-3.9977 2.9 6.0462 6.0462 0 0 0 .7427 7.0966 5.98 5.98 0 0 0 .511 4.9107 6.051 6.051 0 0 0 6.5146 2.9001A5.9847 5.9847 0 0 0 13.2599 24a6.0557 6.0557 0 0 0 5.7718-4.2058 5.9894 5.9894 0 0 0 3.9977-2.9001 6.0557 6.0557 0 0 0-.7475-7.0729zm-9.022 12.6081a4.4755 4.4755 0 0 1-2.8764-1.0408l.1419-.0804 4.7783-2.7582a.7948.7948 0 0 0 .3927-.6813v-6.7369l2.02 1.1686a.071.071 0 0 1 .038.052v5.5826a4.504 4.504 0 0 1-4.4945 4.4944zm-9.6607-4.1254a4.4708 4.4708 0 0 1-.5346-3.0137l.142.0852 4.783 2.7582a.7712.7712 0 0 0 .7806 0l5.8428-3.3685v2.3324a.0804.0804 0 0 1-.0332.0615L9.74 19.9502a4.4992 4.4992 0 0 1-6.1408-1.6464zM2.3408 7.8956a4.485 4.485 0 0 1 2.3655-1.9728V11.6a.7664.7664 0 0 0 .3879.6765l5.8144 3.3543-2.0201 1.1685a.0757.0757 0 0 1-.071 0l-4.8303-2.7865A4.504 4.504 0 0 1 2.3408 7.872zm16.5963 3.8558L13.1038 8.364 15.1192 7.2a.0757.0757 0 0 1 .071 0l4.8303 2.7913a4.4944 4.4944 0 0 1-.6765 8.1042v-5.6772a.79.79 0 0 0-.407-.667zm2.0107-3.0231l-.142-.0852-4.7735-2.7818a.7759.7759 0 0 0-.7854 0L9.409 9.2297V6.8974a.0662.0662 0 0 1 .0284-.0615l4.8303-2.7866a4.4992 4.4992 0 0 1 6.6802 4.66zM8.3065 12.863l-2.02-1.1638a.0804.0804 0 0 1-.038-.0567V6.0742a4.4992 4.4992 0 0 1 7.3757-3.4537l-.142.0805L8.704 5.459a.7948.7948 0 0 0-.3927.6813zm1.0976-2.3654l2.602-1.4998 2.6069 1.4998v2.9994l-2.5974 1.4997-2.6067-1.4997Z"/>'
-    "</svg>"
-)
-
-
-def chat_key(topic: str) -> str:
-    return f"chat_messages::{topic}"
-
-
-def model_reply(topic: str, messages: list[dict[str, str]]) -> str:
-    _ = messages
-    if topic == "Base Model":
-        return "Base Model will answer once connected to Hugging Face."
-    if topic == "Fine-tuned Model":
-        return "Fine-tuned Model will answer once connected to Hugging Face."
-    return f"{topic} will answer here once its API is connected."
-
-
-FILE_READERS = {
-    ".pdf": "pypdf",
-    ".doc": "python-docx",
-    ".docx": "python-docx",
-    ".ppt": "python-pptx",
-    ".pptx": "python-pptx",
-    ".xls": "openpyxl",
-    ".xlsx": "openpyxl",
-    ".csv": "pandas",
-    ".txt": "built-in Python file I/O",
-    ".md": "built-in Python file I/O",
-}
-
-
-def file_reader_reply(files: list) -> str:
-    lines: list[str] = []
-    seen: set[str] = set()
-    for uploaded in files:
-        ext = Path(getattr(uploaded, "name", "")).suffix.lower()
-        label = ext.lstrip(".").upper() or "this file"
-        lib = FILE_READERS.get(ext, "the matching Python reader")
-        item = f"{label} with {lib}"
-        if item not in seen:
-            seen.add(item)
-            lines.append(item)
-    detail = ", ".join(lines) if lines else "DOC, PDF, and similar formats"
-    return (
-        "File received. Next we will wire the Python libraries that read "
-        f"{detail}."
-    )
-
-
-def chat_thread_html(topic: str) -> str:
-    messages = st.session_state.get(chat_key(topic), [])
-    if not messages:
-        return ""
-    rows: list[str] = []
-    for message in messages:
-        text = escape(message["content"]).replace("\n", "<br>")
-        if message["role"] == "user":
-            rows.append(
-                '<div class="model-chat-row model-chat-row--user">'
-                f'<div class="model-chat-bubble model-chat-bubble--user">{text}</div>'
-                '<span class="model-chat-avatar model-chat-avatar--user" aria-hidden="true">U</span>'
-                "</div>"
-            )
-        else:
-            rows.append(
-                '<div class="model-chat-row model-chat-row--assistant">'
-                f'<span class="model-chat-avatar model-chat-avatar--assistant" aria-hidden="true">{ASSISTANT_MARK}</span>'
-                f'<div class="model-chat-bubble model-chat-bubble--assistant">{text}</div>'
-                "</div>"
-            )
-    return "".join(rows)
-
-
-def render_header() -> None:
+def render_header(lecture: str | None = None) -> None:
+    greet_html = header_greeting_html(lecture)
     st.markdown(
         f"""
         <header class="lecture-header">
@@ -268,9 +464,10 @@ def render_header() -> None:
               <img src="{BITSOM_LOGO}" alt="BITSoM Logo" />
             </div>
             <div class="lecture-header-text">
-              <span class="lecture-header-title">AI Course</span>
-              <span class="lecture-header-sub">Foundations of AI</span>
+              <span class="lecture-header-title">Foundations of AI</span>
+              <span class="lecture-header-sub">AI Course</span>
             </div>
+            {greet_html}
           </div>
         </header>
         """,
@@ -278,65 +475,19 @@ def render_header() -> None:
     )
 
 
-def render_chat(lecture: str | None, sub_lecture: str | None, topic: str) -> None:
-    crumbs = breadcrumb_html(lecture, sub_lecture, topic)
-    number = (lecture or "5").split()[-1]
-    key = chat_key(topic)
-    st.session_state.setdefault(key, [])
-
-    with st.container(key="lesson_block", gap=None):
-        st.html(
-            "<div class='model-chat-shell'>"
-            "<div class='lesson-block-header'>"
-            f"<div class='lesson-number'>{escape(number)}</div>"
-            f"{crumbs}"
-            "</div>"
-            "<div class='model-chat'>"
-            "<div class='model-chat-topbar'>"
-            "<span class='model-chat-title'>AI assistant</span>"
-            "<span class='model-chat-status'>online</span>"
-            "</div>"
-            "<div class='model-chat-thread'>"
-            f"{chat_thread_html(topic)}"
-            "</div>"
-            "</div>"
-            "</div>"
-        )
-        prompt = st.chat_input(
-            "Ask a question",
-            key=f"chat_input_{topic}",
-            accept_file=True,
-            file_type=["pdf", "doc", "docx", "ppt", "pptx", "xls", "xlsx", "csv", "txt", "md"],
-        )
-        if prompt:
-            history = st.session_state[key]
-            if isinstance(prompt, str):
-                text, files = prompt.strip(), []
-            else:
-                text = (prompt.text or "").strip()
-                files = list(getattr(prompt, "files", None) or [])
-            if files:
-                names = ", ".join(getattr(item, "name", "file") for item in files)
-                history.append(
-                    {
-                        "role": "user",
-                        "content": f"{text}\n[{names}]" if text else f"Uploaded {names}",
-                    }
-                )
-                history.append({"role": "assistant", "content": file_reader_reply(files)})
-                st.rerun()
-            elif text:
-                history.append({"role": "user", "content": text})
-                history.append({"role": "assistant", "content": model_reply(topic, history)})
-                st.rerun()
-    render_crumbs(lecture, sub_lecture, topic)
-
-
 def render_workspace(
     lecture: str | None, sub_lecture: str | None, topic: str | None
 ) -> None:
-    if lecture and sub_lecture and topic:
-        render_chat(lecture, sub_lecture, topic)
+    chapter = get_lecture(lecture)
+    render_fn = getattr(chapter, "render", None) if chapter else None
+    if lecture and sub_lecture and topic and callable(render_fn):
+        render_fn(
+            lecture,
+            sub_lecture,
+            topic,
+            crumbs=breadcrumb_html(lecture, sub_lecture, topic),
+        )
+        render_crumbs(lecture, sub_lecture, topic)
         return
 
     crumbs = breadcrumb_html(lecture, sub_lecture, topic)
@@ -345,9 +496,10 @@ def render_workspace(
         ring = number
         heading = sub_lecture
         topic_options = TOPICS.get((lecture, sub_lecture), [])
+        pick_topic = getattr(chapter, "PICK_TOPIC", "") if chapter else ""
         body = (
-            "Pick Base Model, Fine-tuned Model, or RLHF-aligned Model to open that section."
-            if topic_options
+            pick_topic
+            if topic_options and pick_topic
             else f"Content for {lecture} · {sub_lecture} will land here next."
         )
         pill = "Select a topic" if topic_options else sub_lecture
@@ -356,9 +508,10 @@ def render_workspace(
         subs = SUB_LECTURES.get(lecture, [])
         ring = number
         heading = f"{lecture} is selected"
+        pick_sub = getattr(chapter, "PICK_SUB", "") if chapter else ""
         body = (
-            "Pick Tokenisation, Input context, or Post Training to open that section."
-            if subs
+            pick_sub
+            if subs and pick_sub
             else "Sub lectures are not wired yet for this lecture."
         )
         pill = "Select a sub lecture" if subs else "Sub lecture · coming soon"
@@ -392,7 +545,7 @@ def render_workspace(
 
 
 st.set_page_config(
-    page_title="AI Course",
+    page_title="Foundations of AI",
     page_icon=str(FAVICON),
     layout="wide",
     initial_sidebar_state="expanded",
@@ -449,6 +602,5 @@ with st.sidebar:
     else:
         topic = None
 
-render_header()
+render_header(lecture)
 render_workspace(lecture, sub_lecture, topic)
-lock_dropdowns()
