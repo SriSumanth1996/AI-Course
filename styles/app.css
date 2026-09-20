@@ -1302,6 +1302,29 @@ iframe[height="0"] {
   mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='black' d='M11 21V8.8l-4.6 4.6L5 12l7-7 7 7-1.4 1.4L13 8.8V21h-2z'/%3E%3C/svg%3E") center / contain no-repeat;
 }
 
+.st-key-lesson_block.is-generating [data-testid="stChatInputSubmitButton"]::after {
+  width: 10px;
+  height: 10px;
+  border-radius: 1px;
+  -webkit-mask: none;
+  mask: none;
+  background: #ffffff;
+}
+
+.st-key-lesson_block.is-generating [data-testid="stChatInput"] div:has(> [data-testid="stChatInputSubmitButton"]) {
+  position: relative !important;
+}
+
+.chat-stop-overlay {
+  position: absolute;
+  inset: 6px;
+  z-index: 30;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
 .st-key-lesson_block [data-testid="stChatInput"] button:has(path[d*="M12 4a3"]),
 .st-key-lesson_block [data-testid="stChatInput"] [aria-label*="Record"],
 .st-key-lesson_block [data-testid="stChatInput"] [aria-label*="microphone" i],
@@ -1311,10 +1334,16 @@ iframe[height="0"] {
 
 .st-key-rlhf_picker,
 .st-key-llama_picker,
+[class*="st-key-llama_picker"],
 .st-key-rlhf_ctrl_form,
+.st-key-llama_ctrl_form,
+[class*="st-key-llama_ctrl_form"],
 [data-testid="stElementContainer"]:has(> .st-key-rlhf_picker),
 [data-testid="stElementContainer"]:has(> .st-key-llama_picker),
-[data-testid="stElementContainer"]:has(> .st-key-rlhf_ctrl_form) {
+[data-testid="stElementContainer"]:has(> [class*="st-key-llama_picker"]),
+[data-testid="stElementContainer"]:has(> .st-key-rlhf_ctrl_form),
+[data-testid="stElementContainer"]:has(> .st-key-llama_ctrl_form),
+[data-testid="stElementContainer"]:has(> [class*="st-key-llama_ctrl_form"]) {
   position: absolute !important;
   width: 1px !important;
   height: 1px !important;
@@ -1337,7 +1366,14 @@ iframe[height="0"] {
 [class*="st-key-rlhf_ctrl_ok"],
 [class*="st-key-rlhf_ctrl_form"],
 [class*="st-key-rlhf_clear"],
-.st-key-llama_clear {
+[class*="st-key-llama_mode_"],
+[class*="st-key-llama_controls_draft"],
+[class*="st-key-llama_"][class*="controls_draft"],
+[class*="st-key-llama_ctrl_ok"],
+[class*="st-key-llama_ctrl_form"],
+.st-key-llama_clear,
+[class*="st-key-llama_clear"],
+.st-key-chat_stop {
   position: absolute !important;
   left: 0 !important;
   top: 0 !important;
