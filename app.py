@@ -16,6 +16,22 @@ BITSOM_LOGO = (
 )
 
 
+RACHIT = "Dr. Rachit Kamdar"
+MEENAKSHI = "Dr. Meenakshi Balakrishna"
+LECTURE_HOSTS = {
+    1: (RACHIT,),
+    2: (MEENAKSHI,),
+    3: (MEENAKSHI,),
+    4: (MEENAKSHI,),
+    5: (RACHIT,),
+    6: (RACHIT,),
+    7: (RACHIT, MEENAKSHI),
+    8: (RACHIT,),
+    9: (MEENAKSHI,),
+    10: (MEENAKSHI, RACHIT),
+}
+
+
 def lecture_number(lecture: str | None) -> int | None:
     if not lecture:
         return None
@@ -23,25 +39,25 @@ def lecture_number(lecture: str | None) -> int | None:
     return int(token) if token.isdigit() else None
 
 
-def header_host(lecture: str | None) -> str | None:
+def header_hosts(lecture: str | None) -> tuple[str, ...]:
     number = lecture_number(lecture)
     if number is None:
-        return None
-    if 1 <= number <= 3:
-        return "Dr. Meensakhi Balakrishna"
-    if 4 <= number <= 10:
-        return "Dr. Rachit Kamdar"
-    return None
+        return ()
+    return LECTURE_HOSTS.get(number, ())
 
 
 def header_greeting_html(lecture: str | None) -> str:
-    host = header_host(lecture)
-    if not host:
+    hosts = header_hosts(lecture)
+    if not hosts:
         return ""
+    if len(hosts) > 1:
+        hi = "Hi Professors!"
+    else:
+        hi = f"Hi {escape(hosts[0])}!"
     return (
         '<div class="lecture-header-cards">'
         '<div class="lecture-header-card">'
-        f'<div class="lecture-header-greeting-hi">Hi {escape(host)}!</div>'
+        f'<div class="lecture-header-greeting-hi">{hi}</div>'
         '<div class="lecture-header-greeting-wish">Welcome to your teaching space</div>'
         "</div>"
         "</div>"
@@ -56,8 +72,8 @@ def inject_css() -> None:
         """
         <script>
         (function () {
-          if (window.__lectureChrome === 32) return;
-          window.__lectureChrome = 32;
+          if (window.__lectureChrome === 36) return;
+          window.__lectureChrome = 36;
           window.__crumbForward = true;
           window.__rlhfForward = true;
 
@@ -72,9 +88,12 @@ def inject_css() -> None:
                 return true;
               }
             }
-            if (key === "rlhf_ctrl_ok") {
+            if (key === "rlhf_ctrl_ok" || key.indexOf("llama_ctrl_ok") === 0) {
+              var formKey = key.indexOf("llama_ctrl_ok") === 0
+                ? key.replace("llama_ctrl_ok", "llama_ctrl_form")
+                : "rlhf_ctrl_form";
               var submit = document.querySelector(
-                '[class*="st-key-rlhf_ctrl_form"] button, [data-testid="stFormSubmitButton"] button'
+                '[class*="st-key-' + formKey + '"] button, [data-testid="stFormSubmitButton"] button'
               );
               if (submit) {
                 submit.click();
@@ -117,10 +136,10 @@ def inject_css() -> None:
             return draft;
           }
 
-          function writeRlhfDraft(draft) {
+          function writeDraft(key, draft) {
             var input = document.querySelector(
-              '[class*="st-key-rlhf_controls_draft"] textarea, ' +
-              '[class*="st-key-rlhf_controls_draft"] input'
+              '[class*="st-key-' + key + '"] textarea, ' +
+              '[class*="st-key-' + key + '"] input'
             );
             if (!input) return false;
             var proto = input.tagName === "TEXTAREA" ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
@@ -129,6 +148,52 @@ def inject_css() -> None:
             input.dispatchEvent(new Event("input", { bubbles: true }));
             input.dispatchEvent(new Event("change", { bubbles: true }));
             return true;
+          }
+
+          function writeRlhfDraft(draft) {
+            return writeDraft("rlhf_controls_draft", draft);
+          }
+
+          function rangeDraft(menu, kind) {
+            var fly = menu.querySelector('[data-rlhf-row="' + kind + '"]');
+            if (!fly) return null;
+            var manual = fly.querySelector('[data-range-choice="Manual"].is-active');
+            var current = fly.querySelector(".rlhf-control-current");
+            var label = current ? (current.textContent || "").trim() : "";
+            if (manual) {
+              var rangeEl = fly.querySelector("[data-range-input]");
+              return rangeEl ? parseFloat(rangeEl.value) : null;
+            }
+            if (label && label !== "Auto") {
+              var parsed = parseFloat(label);
+              if (!isNaN(parsed)) return parsed;
+            }
+            return null;
+          }
+
+          function collectLlamaDraft(menu) {
+            return {
+              output_length: activePick(menu, "tok"),
+              temperature: rangeDraft(menu, "tmp"),
+              top_p: rangeDraft(menu, "topp"),
+              frequency_penalty: rangeDraft(menu, "freq")
+            };
+          }
+
+          function formatRange(value, digits) {
+            var text = parseFloat(value).toFixed(digits);
+            if (text.indexOf(".") >= 0) text = text.replace(/0+$/, "").replace(/[.]$/, "");
+            return text || "0";
+          }
+
+          function llamaScope() {
+            var el = document.querySelector("[data-llama-scope]");
+            return el ? (el.getAttribute("data-llama-scope") || "") : "";
+          }
+
+          function writeLlamaDraft(draft) {
+            var scope = llamaScope();
+            return writeDraft(scope ? "llama_" + scope + "_controls_draft" : "llama_controls_draft", draft);
           }
 
           var allow = { ArrowDown: 1, ArrowUp: 1, Enter: 1, Escape: 1, Tab: 1, Home: 1, End: 1 };
@@ -253,6 +318,42 @@ def inject_css() -> None:
                 if (label) label.textContent = value;
               });
             });
+            document.querySelectorAll("[data-range-input]").forEach(function (el) {
+              if (el.dataset.rangeWired === "1") return;
+              el.dataset.rangeWired = "1";
+              el.addEventListener("input", function () {
+                var digits = parseInt(el.getAttribute("data-range-digits") || "1", 10);
+                var value = formatRange(el.value, digits);
+                var readout = el.parentElement && el.parentElement.querySelector(".rlhf-temp-readout");
+                if (readout) readout.textContent = value;
+                var fly = el.closest(".rlhf-control-flyout");
+                var label = fly && fly.querySelector(".rlhf-control-current");
+                if (label) label.textContent = value;
+              });
+            });
+          }
+
+          function wireStopOverlay() {
+            var generating = !!document.querySelector(".model-chat-shell[data-generating='1']");
+            var block = document.querySelector(".st-key-lesson_block");
+            if (block) block.classList.toggle("is-generating", generating);
+            var host = document.querySelector(
+              '.st-key-lesson_block [data-testid="stChatInput"] div:has(> [data-testid="stChatInputSubmitButton"])'
+            );
+            if (!host) return;
+            var overlay = host.querySelector("[data-chat-stop]");
+            if (generating) {
+              if (!overlay) {
+                overlay = document.createElement("button");
+                overlay.type = "button";
+                overlay.setAttribute("data-chat-stop", "1");
+                overlay.setAttribute("aria-label", "Stop generating");
+                overlay.className = "chat-stop-overlay";
+                host.appendChild(overlay);
+              }
+            } else if (overlay) {
+              overlay.remove();
+            }
           }
 
           function scan() {
@@ -262,9 +363,17 @@ def inject_css() -> None:
             document.querySelectorAll(".model-chat-thread").forEach(pinThread);
             hintFileUi();
             wireTempRange();
+            wireStopOverlay();
           }
 
           document.addEventListener("click", function (e) {
+            var stopBtn = e.target.closest("[data-chat-stop]");
+            if (stopBtn) {
+              e.preventDefault();
+              e.stopPropagation();
+              clickHidden("chat_stop");
+              return;
+            }
             var crumb = e.target.closest(".crumb-link");
             if (crumb) {
               e.preventDefault();
@@ -279,6 +388,12 @@ def inject_css() -> None:
             if (companyOpt) {
               e.preventDefault();
               clickHidden("rlhf_co_" + companyOpt.getAttribute("data-rlhf-company"));
+              return;
+            }
+            var llamaModeOpt = e.target.closest("[data-llama-mode]");
+            if (llamaModeOpt) {
+              e.preventDefault();
+              clickHidden("llama_mode_" + llamaScope() + "_" + llamaModeOpt.getAttribute("data-llama-mode"));
               return;
             }
             var modeOpt = e.target.closest("[data-rlhf-mode]");
@@ -316,6 +431,30 @@ def inject_css() -> None:
               }
               return;
             }
+            var rangeMode = e.target.closest("[data-range-choice]");
+            if (rangeMode) {
+              e.preventDefault();
+              var rangeCard = rangeMode.closest(".rlhf-length-card");
+              var choice = rangeMode.getAttribute("data-range-choice") || "Auto";
+              if (rangeCard) {
+                rangeCard.querySelectorAll("[data-range-choice]").forEach(function (item) {
+                  item.classList.toggle("is-active", item === rangeMode);
+                });
+                var slider = rangeCard.querySelector(".rlhf-temp-slider");
+                if (slider) slider.classList.toggle("is-hidden", choice !== "Manual");
+                var rowCur = rangeMode.closest(".rlhf-control-flyout");
+                var label = rowCur && rowCur.querySelector(".rlhf-control-current");
+                if (label) {
+                  if (choice === "Auto") label.textContent = "Auto";
+                  else {
+                    var range = rangeCard.querySelector("[data-range-input]");
+                    var digits = range ? parseInt(range.getAttribute("data-range-digits") || "1", 10) : 1;
+                    label.textContent = range ? formatRange(range.value, digits) : "0";
+                  }
+                }
+              }
+              return;
+            }
             var tempMode = e.target.closest("[data-rlhf-temp-mode]");
             if (tempMode) {
               e.preventDefault();
@@ -336,6 +475,22 @@ def inject_css() -> None:
                     label.textContent = range ? parseFloat(range.value).toFixed(1) : "0.7";
                   }
                 }
+              }
+              return;
+            }
+            var llamaOkCtrl = e.target.closest("[data-llama-ctrl-ok]");
+            if (llamaOkCtrl) {
+              e.preventDefault();
+              var llamaOkMenu = llamaOkCtrl.closest(".rlhf-dd-menu");
+              if (llamaOkMenu) {
+                writeLlamaDraft(collectLlamaDraft(llamaOkMenu));
+                var llamaOkKey = "llama_ctrl_ok_" + llamaScope();
+                setTimeout(function () {
+                  clickHidden(llamaOkKey);
+                }, 80);
+                setTimeout(function () {
+                  clickHidden(llamaOkKey);
+                }, 220);
               }
               return;
             }
@@ -365,7 +520,7 @@ def inject_css() -> None:
             var clearChat = e.target.closest("[data-rlhf-clear], [data-llama-clear]");
             if (clearChat) {
               e.preventDefault();
-              clickHidden(clearChat.hasAttribute("data-llama-clear") ? "llama_clear" : "rlhf_clear");
+              clickHidden(clearChat.hasAttribute("data-llama-clear") ? "llama_clear_" + llamaScope() : "rlhf_clear");
               return;
             }
             var topToggle = e.target.closest("summary.rlhf-dd-toggle");
