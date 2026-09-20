@@ -1,12 +1,12 @@
 # AI Course
 
-Local Streamlit workspace for **Foundations of AI** (BITSoM).
+Private Streamlit workspace for **Foundations of AI** at BITS School of Management (BITSoM).
 
-This is a lecture navigation shell. Lecture 5 Post Training has a shared chat UI for three model stages. Model APIs and document readers are not connected yet.
+This repository is proprietary teaching material of Birla Institute of Technology and Science (BITS Pilani). It is for authorised instructors and staff only. See `LICENSE`.
 
 ## Run locally
 
-Python 3.10+ recommended.
+Python 3.10+ recommended. Authorised use only.
 
 ```bash
 pip install -r requirements.txt
