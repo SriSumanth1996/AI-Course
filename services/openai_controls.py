@@ -29,23 +29,8 @@ DEFAULT_VERBOSITY = "Auto"
 VERBOSITY_OPTIONS = ["Auto", "Low", "Medium", "High"]
 TEMPERATURE_STEPS = [round(i / 10, 1) for i in range(0, 21)]
 
-REASONING_O3 = ["Auto", "Low", "Medium", "High"]
-REASONING_GPT5 = ["Auto", "Minimal", "Low", "Medium", "High"]
-REASONING_GPT51 = ["Auto", "None", "Low", "Medium", "High"]
 REASONING_GPT52 = ["Auto", "None", "Low", "Medium", "High", "XHigh"]
 REASONING_GPT56 = ["Auto", "None", "Low", "Medium", "High", "XHigh", "Max"]
-REASONING_ASTRA = ["Auto", "Low", "Medium", "High", "XHigh", "Max"]
-
-ALL_REASONING = [
-    "Auto",
-    "None",
-    "Minimal",
-    "Low",
-    "Medium",
-    "High",
-    "XHigh",
-    "Max",
-]
 
 
 @dataclass(frozen=True)
@@ -61,44 +46,18 @@ _RANGE = "range"
 _WHEN_NONE = "reasoning_none"
 
 _CHAT = ModelControls(temperature=_RANGE)
-_O3 = ModelControls(reasoning=tuple(REASONING_O3))
-_GPT5 = ModelControls(reasoning=tuple(REASONING_GPT5), verbosity=True)
-_GPT51 = ModelControls(
-    reasoning=tuple(REASONING_GPT51),
-    verbosity=True,
-    temperature=_WHEN_NONE,
-)
 _GPT52 = ModelControls(
     reasoning=tuple(REASONING_GPT52),
     verbosity=True,
     temperature=_WHEN_NONE,
 )
-_GPT54 = ModelControls(reasoning=tuple(REASONING_GPT52), verbosity=True)
 _GPT56 = ModelControls(reasoning=tuple(REASONING_GPT56), verbosity=True)
-_ASTRA = ModelControls(
-    max_tokens=False,
-    reasoning=None,
-    verbosity=False,
-    temperature=None,
-    disabled=True,
-)
 
 REGISTRY: dict[str, ModelControls] = {
     "GPT-4o Mini": _CHAT,
-    "GPT-4o": _CHAT,
     "GPT-4.1": _CHAT,
-    "o3": _O3,
-    "GPT-5 Mini": _GPT5,
-    "GPT-5": _GPT5,
-    "GPT-5.1": _GPT51,
     "GPT-5.2": _GPT52,
-    "GPT-5.4 Mini": _GPT54,
-    "GPT-5.4": _GPT54,
-    "GPT-5.5": _GPT54,
-    "GPT-5.6 Luna": _GPT56,
-    "GPT-5.6 Terra": _GPT56,
     "GPT-5.6 Sol": _GPT56,
-    "GPT-6 Astra": _ASTRA,
 }
 
 
