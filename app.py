@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import json
 from html import escape
 from pathlib import Path
 
 import streamlit as st
+import streamlit.components.v1 as components
 from lectures import LECTURES, SUB_LECTURES, TOPICS, get_lecture
 
 ROOT = Path(__file__).resolve().parent
@@ -67,11 +69,16 @@ def header_greeting_html(lecture: str | None) -> str:
 
 def inject_css() -> None:
     st.html(STYLES)
-    script = CHROME_JS.read_text(encoding="utf-8")
-    st.html(
-        '<div hidden data-lecture-chrome="1"></div>'
-        f"<script>{script}</script>",
-        unsafe_allow_javascript=True,
+    code = json.dumps(CHROME_JS.read_text(encoding="utf-8"))
+    components.html(
+        "<script>(function () {"
+        "var host = window.parent;"
+        "if (host.__lectureChrome) return;"
+        "var s = host.document.createElement('script');"
+        f"s.textContent = {code};"
+        "host.document.head.appendChild(s);"
+        "})();</script>",
+        height=0,
     )
 
 
