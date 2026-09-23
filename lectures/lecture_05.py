@@ -14,6 +14,11 @@ from services.huggingface_chat import LLAMA_BASE_MODEL
 from services.huggingface_chat import LLAMA_INSTRUCT_MODEL
 from services.huggingface_chat import chat as llama_chat
 from services.huggingface_chat import stream_tokens as llama_stream_tokens
+from services.input_context_cases import INPUT_CONTEXT_CASES
+from services.input_context_cases import INPUT_CONTEXT_MODEL
+from services.input_context_cases import INPUT_CONTEXT_MODEL_LABEL
+from services.input_context_cases import INPUT_CONTEXT_TOPICS
+from services.input_context_cases import document_for
 from services.llama_controls import DEFAULT_FREQUENCY_PENALTY
 from services.llama_controls import DEFAULT_TEMPERATURE
 from services.llama_controls import DEFAULT_TOP_P
@@ -29,6 +34,7 @@ from services.openai_controls import (
     DEFAULT_VERBOSITY,
     OUTPUT_LENGTH_HINTS,
     OUTPUT_LENGTHS,
+    TEMPERATURE_STEPS,
     VERBOSITY_OPTIONS,
     request_params,
     spec_for,
@@ -40,6 +46,10 @@ openai_stream_words = openai_stream_tokens
 TITLE = "Lecture 5"
 SUB_LECTURES = ["Tokenisation", "Input context", "Post Training"]
 TOPICS = {
+    "Input context": [
+        "Marketing ad agency",
+        "Code generation",
+    ],
     "Post Training": [
         "Base Model",
         "Fine-tuned Model",
@@ -52,6 +62,12 @@ PICK_SUB = (
 PICK_TOPIC = (
     "Pick Base Model, Fine-tuned Model, or RLHF-aligned Model to open that section."
 )
+PICK_TOPIC_BY_SUB = {
+    "Input context": (
+        "Pick Marketing ad agency or Code generation to open that case."
+    ),
+    "Post Training": PICK_TOPIC,
+}
 
 ASSETS = Path(__file__).resolve().parent.parent / "assets"
 
@@ -128,6 +144,120 @@ def llama_key(topic: str, name: str) -> str:
     return f"llama_{llama_scope(topic)}_{name}"
 
 
+CTX_PANES = ("prompt", "context")
+CTX_PANE_LABELS = {
+    "prompt": "Prompt only",
+    "context": "Prompt + context",
+}
+
+
+def ctx_case(topic: str) -> dict[str, str]:
+    return INPUT_CONTEXT_CASES[topic]
+
+
+def ctx_slot(topic: str) -> str:
+    return ctx_case(topic)["slot"]
+
+
+def ctx_pane_id(topic: str, pane: str) -> str:
+    return f"{ctx_slot(topic)}_{pane}"
+
+
+def ctx_key(topic: str, pane: str, name: str) -> str:
+    return f"ctx_{ctx_pane_id(topic, pane)}_{name}"
+
+
+def ctx_chat_key(topic: str, pane: str) -> str:
+    return f"chat_messages::{topic}::{pane}"
+
+
+def ctx_input_key(topic: str, pane: str) -> str:
+    return f"chat_input_{topic}_{pane}"
+
+
+def ctx_busy(topic: str, pane: str | None = None) -> bool:
+    if pane in CTX_PANES:
+        return bool(st.session_state.get(ctx_key(topic, pane, "busy")))
+    return any(ctx_busy(topic, item) for item in CTX_PANES)
+
+
+def ctx_pending(topic: str, pane: str) -> dict | None:
+    pending = st.session_state.get(ctx_key(topic, pane, "pending"))
+    return pending if isinstance(pending, dict) else None
+
+
+def set_ctx_run(
+    topic: str,
+    pane: str,
+    *,
+    busy: bool,
+    pending: dict | None = None,
+) -> None:
+    st.session_state[ctx_key(topic, pane, "busy")] = busy
+    st.session_state[ctx_key(topic, pane, "pending")] = pending
+
+
+def recover_ctx_lock(topic: str) -> None:
+    for pane in CTX_PANES:
+        if ctx_busy(topic, pane) and not ctx_pending(topic, pane):
+            set_ctx_run(topic, pane, busy=False)
+
+
+def ctx_stamp(topic: str, pane: str) -> int:
+    return int(st.session_state.get(ctx_key(topic, pane, "stamp")) or 0)
+
+
+def ctx_has_thread(topic: str, pane: str) -> bool:
+    history = st.session_state.get(ctx_chat_key(topic, pane)) or []
+    return any(
+        isinstance(item, dict) and str(item.get("content") or "").strip()
+        for item in history
+    )
+
+
+def ctx_uses_document(pane: str) -> bool:
+    return pane == "context"
+
+
+def clear_ctx_chat(topic: str, pane: str) -> None:
+    if ctx_busy(topic, pane) or not ctx_has_thread(topic, pane):
+        return
+    st.session_state[ctx_chat_key(topic, pane)] = []
+    st.session_state[ctx_key(topic, pane, "stamp")] = ctx_stamp(topic, pane) + 1
+    st.session_state[ctx_input_key(topic, pane)] = ctx_case(topic)["prompt"]
+
+
+def ctx_file_name(topic: str) -> str:
+    return ctx_case(topic)["file"]
+
+
+def begin_ctx_request(topic: str, pane: str, text: str) -> None:
+    history = st.session_state.setdefault(ctx_chat_key(topic, pane), [])
+    shown = text
+    if ctx_uses_document(pane):
+        shown = f"{text}\n[{ctx_file_name(topic)}]"
+    history.append({"role": "user", "content": shown})
+    history.append(
+        {
+            "role": "assistant",
+            "content": "",
+            "company": "OpenAI",
+            "status": "generating",
+        }
+    )
+    set_ctx_run(
+        topic,
+        pane,
+        busy=True,
+        pending={
+            "type": "text",
+            "use_context": ctx_uses_document(pane),
+            "output_length": ensure_ctx_output_length(topic, pane),
+            "temperature": ensure_ctx_temperature(topic, pane),
+        },
+    )
+
+
 def company_mark(company: str, color: str) -> str:
     svg = (ASSETS / "logos" / COMPANY_LOGOS[company]).read_text(encoding="utf-8")
     svg = svg.replace("<svg", f'<svg fill="{color}"', 1)
@@ -173,26 +303,49 @@ def set_llama_run(topic: str, *, busy: bool, pending: dict | None = None) -> Non
     st.session_state[llama_key(topic, "pending")] = pending
 
 
-def request_chat_stop(topic: str) -> None:
+def request_chat_stop(topic: str, pane: str | None = None) -> None:
     st.session_state.rlhf_pending = None
     st.session_state.rlhf_busy = False
     if topic in LLAMA_TOPICS:
         set_llama_run(topic, busy=False)
+    if topic in INPUT_CONTEXT_TOPICS:
+        panes = (pane,) if pane in CTX_PANES else CTX_PANES
+        for item in panes:
+            set_ctx_run(topic, item, busy=False)
+            settle_partial_assistant(topic, pane=item)
+            reset_ctx_controls(topic, item)
+        return
     settle_partial_assistant(topic)
 
 
 def assistant_body_text(content: str) -> str:
     text = (content or "").strip()
-    if "This answer is being generated by" in text or text.startswith(
-        "This answer is generated by"
+    if "This answer is being generated" in text or text.startswith(
+        "This answer is generated"
     ):
         _, _, rest = text.partition("\n\n")
         return rest.strip()
     return text
 
 
-def settle_partial_assistant(topic: str) -> None:
-    history = st.session_state.get(chat_key(topic), [])
+def settle_partial_assistant(topic: str, pane: str | None = None) -> None:
+    if topic in INPUT_CONTEXT_TOPICS:
+        panes = (pane,) if pane in CTX_PANES else CTX_PANES
+        for item in panes:
+            _settle_history(
+                st.session_state.get(ctx_chat_key(topic, item), []),
+                topic,
+                pane=item,
+            )
+        return
+    _settle_history(st.session_state.get(chat_key(topic), []), topic)
+
+
+def _settle_history(
+    history: list[dict],
+    topic: str,
+    pane: str | None = None,
+) -> None:
     if not history:
         return
     last = history[-1]
@@ -201,7 +354,10 @@ def settle_partial_assistant(topic: str) -> None:
     if last.get("status") not in {"generating", "streaming"}:
         return
     last["content"] = with_rlhf_note(
-        topic, assistant_body_text(last.get("content") or ""), done=True
+        topic,
+        assistant_body_text(last.get("content") or ""),
+        done=True,
+        pane=pane,
     )
     last["status"] = "done"
 
@@ -212,8 +368,9 @@ def commit_assistant(
     text: str,
     *,
     company: str | None = None,
+    pane: str | None = None,
 ) -> None:
-    reply = with_rlhf_note(topic, text, done=True)
+    reply = with_rlhf_note(topic, text, done=True, pane=pane)
     if history and history[-1]["role"] == "assistant":
         history[-1]["content"] = reply
         history[-1]["status"] = "done"
@@ -707,11 +864,31 @@ def llama_note(topic: str, *, done: bool = False) -> str:
     return f"This answer is being generated by {label}."
 
 
-def with_rlhf_note(topic: str, text: str, *, done: bool = False) -> str:
+def ctx_note(topic: str, pane: str, *, done: bool = False) -> str:
+    if topic not in INPUT_CONTEXT_TOPICS:
+        return ""
+    if ctx_uses_document(pane):
+        suffix = f"{INPUT_CONTEXT_MODEL_LABEL} with the input-context document"
+    else:
+        suffix = f"{INPUT_CONTEXT_MODEL_LABEL} from the prompt only"
+    if done:
+        return f"This answer is generated by {suffix}."
+    return f"This answer is being generated by {suffix}."
+
+
+def with_rlhf_note(
+    topic: str,
+    text: str,
+    *,
+    done: bool = False,
+    pane: str | None = None,
+) -> str:
     if topic in LLAMA_TOPICS:
         note = llama_note(topic, done=done)
     elif topic == "RLHF-aligned Model":
         note = rlhf_note(done=done)
+    elif topic in INPUT_CONTEXT_TOPICS:
+        note = ctx_note(topic, pane or "prompt", done=done)
     else:
         return text
     if not note:
@@ -728,11 +905,11 @@ def api_messages(messages: list[dict[str, str]]) -> list[dict[str, str]]:
         content = (message.get("content") or "").strip()
         if role not in {"user", "assistant"} or not content:
             continue
-        if "This answer is being generated by" in content:
+        if "This answer is being generated" in content:
             continue
         if message.get("status") in {"generating", "streaming"}:
             continue
-        if content.startswith("This answer is generated by"):
+        if content.startswith("This answer is generated"):
             _, _, rest = content.partition("\n\n")
             content = rest.strip()
             if not content:
@@ -854,48 +1031,552 @@ def ingest_uploads(topic: str, files: list) -> str:
 
 
 BOLD_MARK = re.compile(r"\*\*(.+?)\*\*")
+ITALIC_STAR = re.compile(r"(?<!\*)\*(?!\s)([^*\n]+?)(?<!\s)\*(?!\*)")
+ITALIC_UNDER = re.compile(r"(?<![A-Za-z0-9])_(?!\s)([^_\n]+?)(?<!\s)_(?![A-Za-z0-9])")
 CODE_MARK = re.compile(r"`([^`]+)`")
 HEADING_LINE = re.compile(r"^(#{1,6})(?:\s+(.*))?$")
+LIST_ITEM = re.compile(r"^(\s*)([-*]|\d+[.)])\s+(\S.*)$")
+TABLE_ROW = re.compile(r"^\s*\|.+\|\s*$")
+TABLE_SEP = re.compile(r"^\s*\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)+\|?\s*$")
+
+
+def _format_emphasis(text: str) -> str:
+    text = BOLD_MARK.sub(r"<strong>\1</strong>", text)
+    text = ITALIC_STAR.sub(r"<em>\1</em>", text)
+    return ITALIC_UNDER.sub(r"<em>\1</em>", text)
 
 
 def format_inline_html(text: str) -> str:
-    text = escape(text)
-    text = BOLD_MARK.sub(r"<strong>\1</strong>", text)
-    return CODE_MARK.sub(r"<code>\1</code>", text)
+    pieces: list[str] = []
+    last = 0
+    for match in CODE_MARK.finditer(text):
+        pieces.append(_format_emphasis(escape(text[last:match.start()])))
+        pieces.append(f"<code>{escape(match.group(1))}</code>")
+        last = match.end()
+    pieces.append(_format_emphasis(escape(text[last:])))
+    return "".join(pieces)
+
+
+PY_KEYWORDS = frozenset(
+    """
+    False None True and as assert async await break class continue def del
+    elif else except finally for from global if import in is lambda nonlocal
+    not or pass raise return try while with yield
+    """.split()
+)
+_STRING_PREFIX = re.compile(r"(?i:r|u|b|f|fr|rf|br|rb)")
+
+
+def _code_span(kind: str, text: str) -> str:
+    return f'<span class="tok-{kind}">{escape(text)}</span>'
+
+
+def _python_string_end(source: str, start: int) -> int | None:
+    index = start
+    prefix = ""
+    while index < len(source) and source[index] in "fFrRbBuU" and len(prefix) < 2:
+        prefix += source[index]
+        index += 1
+    if prefix and _STRING_PREFIX.fullmatch(prefix) is None:
+        return None
+    if index >= len(source) or source[index] not in "\"'":
+        return None
+    quote = source[index]
+    triple = source.startswith(quote * 3, index)
+    marker = quote * 3 if triple else quote
+    index += len(marker)
+    while index < len(source):
+        if source[index] == "\\":
+            index += 2
+            continue
+        if source.startswith(marker, index):
+            return index + len(marker)
+        if not triple and source[index] == "\n":
+            return None
+        index += 1
+    return len(source)
+
+
+def highlight_python(source: str) -> str:
+    parts: list[str] = []
+    plain: list[str] = []
+    index = 0
+    length = len(source)
+    expect_name = False
+
+    def flush_plain() -> None:
+        if plain:
+            parts.append(escape("".join(plain)))
+            plain.clear()
+
+    while index < length:
+        if expect_name and source[index].isspace():
+            plain.append(source[index])
+            index += 1
+            continue
+        string_end = _python_string_end(source, index)
+        if string_end is not None:
+            flush_plain()
+            parts.append(_code_span("str", source[index:string_end]))
+            expect_name = False
+            index = string_end
+            continue
+        if source[index] == "#":
+            end = source.find("\n", index)
+            end = length if end < 0 else end
+            flush_plain()
+            parts.append(_code_span("cmt", source[index:end]))
+            expect_name = False
+            index = end
+            continue
+        if source[index] == "@":
+            end = index + 1
+            while end < length and (source[end].isalnum() or source[end] in "._"):
+                end += 1
+            if end > index + 1:
+                flush_plain()
+                parts.append(_code_span("fn", source[index:end]))
+                expect_name = False
+                index = end
+                continue
+        if source[index].isascii() and (source[index].isalpha() or source[index] == "_"):
+            end = index + 1
+            while end < length and (source[end].isalnum() or source[end] == "_"):
+                end += 1
+            word = source[index:end]
+            flush_plain()
+            if expect_name:
+                parts.append(_code_span("fn", word))
+                expect_name = False
+            elif word in PY_KEYWORDS:
+                parts.append(_code_span("kw", word))
+                expect_name = word in {"def", "class"}
+            else:
+                look = end
+                while look < length and source[look] in " \t":
+                    look += 1
+                if look < length and source[look] == "(":
+                    parts.append(_code_span("fn", word))
+                else:
+                    parts.append(escape(word))
+                expect_name = False
+            index = end
+            continue
+        if source[index].isdigit():
+            end = index + 1
+            while end < length and (source[end].isdigit() or source[end] == "_"):
+                end += 1
+            if (
+                end < length
+                and source[end] == "."
+                and end + 1 < length
+                and source[end + 1].isdigit()
+            ):
+                end += 2
+                while end < length and (source[end].isdigit() or source[end] == "_"):
+                    end += 1
+            flush_plain()
+            parts.append(_code_span("num", source[index:end]))
+            expect_name = False
+            index = end
+            continue
+        plain.append(source[index])
+        if not source[index].isspace():
+            expect_name = False
+        index += 1
+    flush_plain()
+    return "".join(parts)
+
+
+SQL_KEYWORDS = frozenset(
+    """
+    select from where insert update delete join left right inner outer full on
+    and or not null create table into values set group by order limit as
+    distinct union all having case when then else end primary key foreign
+    references index drop alter add constraint in is like between exists with
+    return begin declare function returns language replace view trigger if
+    elsif elseif loop while for do offset fetch only true false
+    """.split()
+)
+JS_KEYWORDS = frozenset(
+    """
+    const let var function return if else for while class new this import
+    export from async await try catch throw of in typeof instanceof break
+    continue switch case default yield void delete extends super static true
+    false null undefined finally debugger type interface public private
+    protected implements enum abstract readonly
+    """.split()
+)
+BASH_KEYWORDS = frozenset(
+    """
+    if then else elif fi for while do done case esac in function return exit
+    echo cd export source local readonly set unset shift
+    """.split()
+)
+JSON_KEYWORDS = frozenset({"true", "false", "null"})
+
+
+def highlight_generic(
+    source: str,
+    keywords: frozenset[str],
+    *,
+    line_comments: tuple[str, ...] = (),
+    block_comments: bool = False,
+    quotes: tuple[str, ...] = ("'", '"'),
+    multiline_quotes: tuple[str, ...] = (),
+    dollar_vars: bool = False,
+    json_keys: bool = False,
+    casefold_keywords: bool = False,
+) -> str:
+    parts: list[str] = []
+    plain: list[str] = []
+    index = 0
+    length = len(source)
+    markers = tuple(sorted(line_comments, key=len, reverse=True))
+
+    def flush_plain() -> None:
+        if plain:
+            parts.append(escape("".join(plain)))
+            plain.clear()
+
+    def read_string(quote: str, multiline: bool) -> int | None:
+        cursor = index + 1
+        while cursor < length:
+            if source[cursor] == "\\":
+                cursor += 2
+                continue
+            if source[cursor] == quote:
+                return cursor + 1
+            if source[cursor] == "\n" and not multiline:
+                return None
+            cursor += 1
+        return length if multiline else None
+
+    while index < length:
+        if block_comments and source.startswith("/*", index):
+            end = source.find("*/", index + 2)
+            end = length if end < 0 else end + 2
+            flush_plain()
+            parts.append(_code_span("cmt", source[index:end]))
+            index = end
+            continue
+        comment = next((marker for marker in markers if source.startswith(marker, index)), None)
+        if comment == "#" and index > 0 and source[index - 1] == "$":
+            comment = None
+        if comment:
+            end = source.find("\n", index)
+            end = length if end < 0 else end
+            flush_plain()
+            parts.append(_code_span("cmt", source[index:end]))
+            index = end
+            continue
+        if dollar_vars and source[index] == "$":
+            if index + 1 < length and source[index + 1] == "{":
+                end = source.find("}", index + 2)
+                end = length if end < 0 else end + 1
+            elif index + 1 < length and source[index + 1] in "#@!?*-":
+                end = index + 2
+            elif index + 1 < length and (source[index + 1].isalnum() or source[index + 1] == "_"):
+                end = index + 2
+                while end < length and (source[end].isalnum() or source[end] == "_"):
+                    end += 1
+            else:
+                end = 0
+            if end:
+                flush_plain()
+                parts.append(_code_span("fn", source[index:end]))
+                index = end
+                continue
+        if source[index] in quotes or source[index] in multiline_quotes:
+            multiline = source[index] in multiline_quotes
+            end = read_string(source[index], multiline)
+            if end is not None:
+                kind = "str"
+                if json_keys:
+                    look = end
+                    while look < length and source[look] in " \t\r\n":
+                        look += 1
+                    if look < length and source[look] == ":":
+                        kind = "fn"
+                flush_plain()
+                parts.append(_code_span(kind, source[index:end]))
+                index = end
+                continue
+        if source[index].isascii() and (source[index].isalpha() or source[index] == "_"):
+            end = index + 1
+            while end < length and (source[end].isalnum() or source[end] == "_"):
+                end += 1
+            word = source[index:end]
+            key = word.lower() if casefold_keywords else word
+            flush_plain()
+            look = end
+            while look < length and source[look] in " \t":
+                look += 1
+            called = look < length and source[look] == "("
+            if key in keywords:
+                parts.append(_code_span("kw", word))
+            elif called:
+                parts.append(_code_span("fn", word))
+            else:
+                parts.append(escape(word))
+            index = end
+            continue
+        if source[index].isdigit():
+            end = index + 1
+            while end < length and (source[end].isdigit() or source[end] == "_"):
+                end += 1
+            if (
+                end < length
+                and source[end] == "."
+                and end + 1 < length
+                and source[end + 1].isdigit()
+            ):
+                end += 2
+                while end < length and (source[end].isdigit() or source[end] == "_"):
+                    end += 1
+            flush_plain()
+            parts.append(_code_span("num", source[index:end]))
+            index = end
+            continue
+        plain.append(source[index])
+        index += 1
+    flush_plain()
+    return "".join(parts)
+
+
+def highlight_code(language: str, source: str) -> str:
+    lang = (language or "").strip().lower()
+    if lang in {"python", "py", "python3"}:
+        return highlight_python(source)
+    if lang in {"js", "javascript", "jsx", "ts", "typescript"}:
+        return highlight_generic(
+            source,
+            JS_KEYWORDS,
+            line_comments=("//",),
+            block_comments=True,
+            multiline_quotes=("`",),
+        )
+    if lang in {"sql", "postgres", "postgresql", "mysql"}:
+        return highlight_generic(
+            source,
+            SQL_KEYWORDS,
+            line_comments=("--",),
+            block_comments=True,
+            casefold_keywords=True,
+        )
+    if lang == "json":
+        return highlight_generic(source, JSON_KEYWORDS, quotes=('"',), json_keys=True)
+    if lang in {"sh", "bash", "shell", "zsh"}:
+        return highlight_generic(
+            source,
+            BASH_KEYWORDS,
+            line_comments=("#",),
+            dollar_vars=True,
+        )
+    return escape(source)
+
+
+def code_window_html(language: str, source: str) -> str:
+    raw_lang = (language or "code").strip() or "code"
+    label = escape(raw_lang)
+    body = highlight_code(raw_lang.split()[0], source.rstrip("\n"))
+    return (
+        '<div class="chat-code-window">'
+        f'<div class="chat-code-window-bar"><span>{label}</span></div>'
+        f'<pre class="chat-code-window-body"><code>{body}</code></pre>'
+        "</div>"
+    )
+
+
+def _list_item(line: str) -> tuple[int, str, str] | None:
+    match = LIST_ITEM.match(line.replace("\t", "  "))
+    if match is None:
+        return None
+    indent = len(match.group(1))
+    marker = match.group(2)
+    kind = "ol" if marker[0].isdigit() else "ul"
+    return indent // 2, kind, format_inline_html(match.group(3))
+
+
+def _is_table_row(line: str) -> bool:
+    return TABLE_ROW.match(line) is not None and line.count("|") >= 3
+
+
+def _is_table_sep(line: str) -> bool:
+    return TABLE_SEP.match(line.strip()) is not None
+
+
+def _is_table_start(lines: list[str], index: int) -> bool:
+    if not _is_table_row(lines[index]):
+        return False
+    if index + 1 >= len(lines):
+        return False
+    return _is_table_sep(lines[index + 1]) or _is_table_row(lines[index + 1])
+
+
+def _table_cells(line: str) -> list[str]:
+    body = line.strip()
+    if body.startswith("|"):
+        body = body[1:]
+    if body.endswith("|"):
+        body = body[:-1]
+    return [format_inline_html(cell.strip()) for cell in body.split("|")]
+
+
+def _heading_title(line: str) -> tuple[int, str] | None:
+    match = HEADING_LINE.match(line.rstrip())
+    if match is None:
+        return None
+    title = (match.group(2) or "").strip().rstrip("#").strip()
+    if not title:
+        return None
+    return min(len(match.group(1)), 6), title
+
+
+def _starts_block(lines: list[str], index: int) -> bool:
+    line = lines[index]
+    stripped = line.strip()
+    if not stripped or stripped.startswith("```") or stripped.startswith(">"):
+        return True
+    if _list_item(line) or _is_table_start(lines, index):
+        return True
+    return _heading_title(line) is not None
+
+
+def _render_list(items: list[tuple[int, str, str]]) -> str:
+    def render_at(index: int, depth: int) -> tuple[str, int]:
+        kind = items[index][1]
+        tag = "ol" if kind == "ol" else "ul"
+        chunks = [f'<{tag} class="chat-md-list">']
+        while index < len(items) and items[index][0] == depth and items[index][1] == kind:
+            content = items[index][2]
+            index += 1
+            child = ""
+            while index < len(items) and items[index][0] > depth:
+                nested, index = render_at(index, items[index][0])
+                child += nested
+            chunks.append(f"<li>{content}{child}</li>")
+        chunks.append(f"</{tag}>")
+        return "".join(chunks), index
+
+    index = 0
+    parts: list[str] = []
+    while index < len(items):
+        html, index = render_at(index, items[index][0])
+        parts.append(html)
+    return "".join(parts)
 
 
 def format_message_html(content: str) -> str:
+    lines = content.replace("\r\n", "\n").replace("\r", "\n").split("\n")
     chunks: list[str] = []
-    paragraph: list[str] = []
+    index = 0
+    count = len(lines)
 
-    def flush_paragraph() -> None:
-        if paragraph:
-            chunks.append("<br>".join(paragraph))
-            paragraph.clear()
-
-    for raw in content.replace("\r\n", "\n").replace("\r", "\n").split("\n"):
-        heading = HEADING_LINE.match(raw.rstrip())
+    while index < count:
+        line = lines[index]
+        stripped = line.strip()
+        if stripped.startswith("```"):
+            language = stripped[3:].strip() or "code"
+            index += 1
+            code_lines: list[str] = []
+            while index < count and not lines[index].strip().startswith("```"):
+                code_lines.append(lines[index])
+                index += 1
+            if index < count:
+                index += 1
+            chunks.append(code_window_html(language, "\n".join(code_lines)))
+            continue
+        if _is_table_start(lines, index):
+            header: list[str] | None = None
+            rows: list[list[str]] = []
+            first = _table_cells(lines[index])
+            index += 1
+            if index < count and _is_table_sep(lines[index]):
+                header = first
+                index += 1
+            else:
+                rows.append(first)
+            while index < count and _is_table_row(lines[index]) and not _is_table_sep(lines[index]):
+                rows.append(_table_cells(lines[index]))
+                index += 1
+            head_html = ""
+            if header is not None:
+                head_html = "<thead><tr>" + "".join(f"<th>{cell}</th>" for cell in header) + "</tr></thead>"
+            body_html = "".join(
+                "<tr>" + "".join(f"<td>{cell}</td>" for cell in row) + "</tr>" for row in rows
+            )
+            chunks.append(
+                '<div class="chat-md-table-wrap"><table class="chat-md-table">'
+                f"{head_html}<tbody>{body_html}</tbody></table></div>"
+            )
+            continue
+        if _list_item(line):
+            items: list[tuple[int, str, str]] = []
+            while index < count:
+                if lines[index].strip() == "":
+                    look = index + 1
+                    while look < count and lines[look].strip() == "":
+                        look += 1
+                    if look < count and _list_item(lines[look]):
+                        index = look
+                        continue
+                    break
+                item = _list_item(lines[index])
+                if item is None:
+                    break
+                items.append(item)
+                index += 1
+            if items:
+                chunks.append(_render_list(items))
+            continue
+        if stripped.startswith(">"):
+            quoted: list[str] = []
+            while index < count and lines[index].strip().startswith(">"):
+                quoted.append(format_inline_html(re.sub(r"^\s*>\s?", "", lines[index])))
+                index += 1
+            chunks.append(
+                '<blockquote class="chat-md-quote">' + "<br>".join(quoted) + "</blockquote>"
+            )
+            continue
+        heading = _heading_title(line)
         if heading:
-            title = (heading.group(2) or "").strip().rstrip("#").strip()
-            if not title:
-                continue
-            flush_paragraph()
-            level = min(len(heading.group(1)), 6)
+            level, title = heading
             chunks.append(
                 f'<span class="chat-md-h{level}">{format_inline_html(title)}</span>'
             )
+            index += 1
             continue
-        paragraph.append(format_inline_html(raw) if raw else "")
-    flush_paragraph()
+        if stripped.startswith("#"):
+            index += 1
+            continue
+        if stripped == "":
+            index += 1
+            continue
+        paragraph: list[str] = []
+        while index < count and not _starts_block(lines, index):
+            paragraph.append(lines[index])
+            index += 1
+        if paragraph:
+            chunks.append(
+                '<span class="chat-md-p">'
+                + "<br>".join(format_inline_html(part) for part in paragraph)
+                + "</span>"
+            )
     return "".join(chunks)
 
 
-def chat_thread_html(topic: str, *, hide_active: bool = False) -> str:
+def chat_thread_html(
+    topic: str,
+    *,
+    hide_active: bool = False,
+    pane: str | None = None,
+) -> str:
     def assistant_body_html(message: dict[str, str]) -> str:
         content = message.get("content") or ""
         status = message.get("status")
         generating = status == "generating" or (
-            content.startswith("This answer is being generated by")
+            content.startswith("This answer is being generated")
             and "\n\n" not in content
         )
         if generating:
@@ -903,8 +1584,8 @@ def chat_thread_html(topic: str, *, hide_active: bool = False) -> str:
         if status == "streaming":
             return format_message_html(content) + '<span class="gpt-caret"></span>'
         if (
-            "This answer is being generated by" in content
-            or "This answer is generated by" in content
+            "This answer is being generated" in content
+            or "This answer is generated" in content
         ):
             note, sep, body = content.partition("\n\n")
             note_html = format_message_html(note)
@@ -917,7 +1598,10 @@ def chat_thread_html(topic: str, *, hide_active: bool = False) -> str:
             return f'<span class="model-chat-source">{note_html}</span>'
         return format_message_html(content)
 
-    messages = st.session_state.get(chat_key(topic), [])
+    if pane in CTX_PANES:
+        messages = st.session_state.get(ctx_chat_key(topic, pane), [])
+    else:
+        messages = st.session_state.get(chat_key(topic), [])
     if not messages:
         return ""
     rows: list[str] = []
@@ -939,6 +1623,8 @@ def chat_thread_html(topic: str, *, hide_active: bool = False) -> str:
             mark = company_mark(mark_company, "#111111")
         elif topic in LLAMA_TOPICS:
             mark = company_mark("Meta", "#111111")
+        elif topic in INPUT_CONTEXT_TOPICS:
+            mark = company_mark("OpenAI", "#111111")
         else:
             mark = ASSISTANT_MARK
         rows.append(
@@ -1353,6 +2039,329 @@ def llama_bar_html(topic: str) -> str:
     )
 
 
+def ctx_doc_html(topic: str) -> str:
+    name = escape(ctx_file_name(topic))
+    body = escape(document_for(topic))
+    caret = '<span class="rlhf-caret-btn" aria-hidden="true"></span>'
+    return (
+        "<details class='rlhf-dd ctx-doc-dd'>"
+        "<summary class='rlhf-dd-toggle' data-ctx-doc='1'>"
+        "<span>Context</span>"
+        f"{caret}"
+        "</summary>"
+        "<div class='ctx-doc-panel' role='document' aria-readonly='true'>"
+        "<div class='ctx-doc-bar'>"
+        f"<span class='ctx-doc-name'>{name}</span>"
+        "<span class='ctx-doc-flag'>Read only</span>"
+        "</div>"
+        f"<pre class='ctx-doc-body' tabindex='0'>{body}</pre>"
+        "</div>"
+        "</details>"
+    )
+
+
+def ctx_pick_id(label: str) -> str:
+    return label.replace(".", "_")
+
+
+def ensure_ctx_output_length(topic: str, pane: str) -> str:
+    key = ctx_key(topic, pane, "output_length")
+    label = st.session_state.get(key)
+    if label not in OUTPUT_LENGTHS:
+        label = DEFAULT_OUTPUT_LENGTH
+        st.session_state[key] = label
+    return label
+
+
+def ensure_ctx_temperature(topic: str, pane: str) -> float | None:
+    key = ctx_key(topic, pane, "temperature")
+    value = st.session_state.get(key)
+    if value is None:
+        return None
+    try:
+        return min(2.0, max(0.0, float(value)))
+    except (TypeError, ValueError):
+        st.session_state[key] = None
+        return None
+
+
+def reset_ctx_controls(topic: str, pane: str) -> None:
+    st.session_state[ctx_key(topic, pane, "output_length")] = DEFAULT_OUTPUT_LENGTH
+    st.session_state[ctx_key(topic, pane, "temperature")] = None
+
+
+def select_ctx_output_length(topic: str, pane: str, label: str) -> None:
+    if ctx_busy(topic, pane) or label not in OUTPUT_LENGTHS:
+        return
+    st.session_state[ctx_key(topic, pane, "output_length")] = label
+
+
+def select_ctx_temperature(topic: str, pane: str, label: str) -> None:
+    if ctx_busy(topic, pane):
+        return
+    key = ctx_key(topic, pane, "temperature")
+    if label == "Auto":
+        st.session_state[key] = None
+        return
+    try:
+        st.session_state[key] = min(2.0, max(0.0, float(label)))
+    except (TypeError, ValueError):
+        return
+
+
+def ctx_temperature_label(topic: str, pane: str) -> str:
+    temperature = ensure_ctx_temperature(topic, pane)
+    return "Auto" if temperature is None else f"{temperature:.1f}"
+
+
+def ctx_request_controls(pending: dict | None) -> dict[str, object]:
+    pending = pending or {}
+    return request_params(
+        INPUT_CONTEXT_MODEL_LABEL,
+        output_length=pending.get("output_length"),
+        temperature=pending.get("temperature"),
+    )
+
+
+def ctx_dropdown_html(
+    title: str,
+    current: str,
+    options: list[str],
+    attr: str,
+    locked: bool,
+) -> str:
+    caret = '<span class="rlhf-caret-btn" aria-hidden="true"></span>'
+    items = "".join(
+        (
+            f'<span class="rlhf-dd-item{" is-active" if label == current else ""}" '
+            f'role="button" tabindex="0" {attr}="{escape(label)}">{escape(label)}</span>'
+        )
+        for label in options
+    )
+    toggle = (
+        f"<span class='ctx-pick-name'>{escape(title)}</span>"
+        f"<span class='ctx-pick-value'>{escape(current)}</span>"
+        f"{caret}"
+    )
+    if locked:
+        return (
+            "<div class='rlhf-dd ctx-pick'>"
+            f"<div class='rlhf-dd-toggle'>{toggle}</div>"
+            "</div>"
+        )
+    return (
+        "<details class='rlhf-dd ctx-pick'>"
+        f"<summary class='rlhf-dd-toggle'>{toggle}</summary>"
+        f"<div class='rlhf-dd-menu'>{items}</div>"
+        "</details>"
+    )
+
+
+def ctx_controls_html(topic: str, pane: str, locked: bool) -> str:
+    tokens = ensure_ctx_output_length(topic, pane)
+    temperature = ctx_temperature_label(topic, pane)
+    temp_options = ["Auto", *[f"{step:.1f}" for step in TEMPERATURE_STEPS]]
+    return (
+        ctx_dropdown_html("Max tokens", tokens, list(OUTPUT_LENGTHS), "data-ctx-tok", locked)
+        + ctx_dropdown_html("Temperature", temperature, temp_options, "data-ctx-temp", locked)
+    )
+
+
+def ctx_bar_html(topic: str, pane: str) -> str:
+    locked = ctx_busy(topic, pane)
+    with_doc = ctx_uses_document(pane)
+    label = CTX_PANE_LABELS[pane]
+    brand = (
+        "<span class='model-chat-brand'>"
+        f"{company_mark('OpenAI', '#ffffff')}"
+        f"<span class='model-chat-title'>{escape(label)}</span>"
+        "</span>"
+    )
+    extras = ctx_doc_html(topic) if with_doc else ""
+    controls = ctx_controls_html(topic, pane, locked)
+    return (
+        f"<div class='rlhf-bar{' is-locked' if locked else ''}' "
+        f"data-ctx-slot='{ctx_pane_id(topic, pane)}'>"
+        f"<div class='rlhf-bar-left'>{brand}</div>"
+        "<div class='rlhf-menus'>"
+        f"{controls}"
+        f"{extras}"
+        "<span class='rlhf-clear' role='button' tabindex='0' data-ctx-clear='1'>Clear</span>"
+        "</div>"
+        "</div>"
+    )
+
+
+def ctx_composer_attrs(topic: str, pane: str) -> str:
+    prompt = escape(ctx_case(topic)["prompt"], quote=True)
+    stamp = ctx_stamp(topic, pane)
+    thread = "1" if ctx_has_thread(topic, pane) else "0"
+    slot = escape(ctx_pane_id(topic, pane), quote=True)
+    attrs = (
+        f" data-ctx-prompt='{prompt}'"
+        f" data-ctx-slot='{slot}'"
+        f" data-ctx-pane='{escape(pane, quote=True)}'"
+        f" data-ctx-stamp='{stamp}'"
+        f" data-ctx-thread='{thread}'"
+        " data-ctx-armed='1'"
+    )
+    if ctx_uses_document(pane):
+        attrs += f" data-ctx-file='{escape(ctx_file_name(topic), quote=True)}'"
+    return attrs
+
+
+def ctx_pane_html(topic: str, pane: str) -> str:
+    generating = "1" if ctx_busy(topic, pane) else "0"
+    return (
+        f"<div class='model-chat-shell' data-generating='{generating}'"
+        f"{ctx_composer_attrs(topic, pane)}>"
+        f"{ctx_bar_html(topic, pane)}"
+        "<div class='model-chat'>"
+        "<div class='model-chat-thread'>"
+        f"{chat_thread_html(topic, pane=pane)}"
+        "</div>"
+        "</div>"
+        "</div>"
+    )
+
+
+def render_ctx_buttons(topic: str, pane: str) -> None:
+    slot = ctx_pane_id(topic, pane)
+    with st.container(key=f"ctx_picker_{slot}", gap=None):
+        for label in OUTPUT_LENGTHS:
+            st.button(
+                label,
+                key=f"ctx_tok_{slot}_{ctx_pick_id(label)}",
+                on_click=select_ctx_output_length,
+                args=(topic, pane, label),
+            )
+        st.button(
+            "Auto",
+            key=f"ctx_temp_{slot}_Auto",
+            on_click=select_ctx_temperature,
+            args=(topic, pane, "Auto"),
+        )
+        for step in TEMPERATURE_STEPS:
+            label = f"{step:.1f}"
+            st.button(
+                label,
+                key=f"ctx_temp_{slot}_{ctx_pick_id(label)}",
+                on_click=select_ctx_temperature,
+                args=(topic, pane, label),
+            )
+        st.button(
+            "Clear",
+            key=f"ctx_clear_{slot}",
+            on_click=clear_ctx_chat,
+            args=(topic, pane),
+        )
+        st.button(
+            "Stop",
+            key=f"ctx_stop_{slot}",
+            on_click=request_chat_stop,
+            args=(topic, pane),
+        )
+
+
+def _ctx_prompt_text(prompt) -> str:
+    if isinstance(prompt, str):
+        return prompt.strip()
+    return (getattr(prompt, "text", None) or "").strip()
+
+
+def _fill_ctx_input(topic: str, pane: str) -> None:
+    input_key = ctx_input_key(topic, pane)
+    if ctx_has_thread(topic, pane):
+        return
+    current = st.session_state.get(input_key)
+    if isinstance(current, str):
+        filled = current.strip()
+    else:
+        filled = str(getattr(current, "text", "") or "").strip()
+    if not filled:
+        st.session_state[input_key] = ctx_case(topic)["prompt"]
+
+
+def stream_ctx_pane(topic: str, pane: str, shell) -> bool:
+    pending = ctx_pending(topic, pane)
+    if not (ctx_busy(topic, pane) and pending and pending.get("type") != "files"):
+        return False
+    history = st.session_state[ctx_chat_key(topic, pane)]
+    document = document_for(topic) if pending.get("use_context") else ""
+    acc = ""
+    last_paint = 0.0
+    if history and history[-1]["role"] == "assistant":
+        history[-1]["status"] = "streaming"
+        history[-1]["company"] = "OpenAI"
+    finished = False
+    try:
+        for token in openai_stream_tokens(
+            INPUT_CONTEXT_MODEL,
+            api_messages(history),
+            document=document,
+            controls=ctx_request_controls(pending),
+            kind="input_context",
+        ):
+            acc += token
+            if history and history[-1]["role"] == "assistant":
+                history[-1]["content"] = with_rlhf_note(
+                    topic, acc, done=False, pane=pane
+                )
+                history[-1]["status"] = "streaming"
+            now = time.monotonic()
+            if last_paint == 0.0 or now - last_paint >= 0.05:
+                shell.html(ctx_pane_html(topic, pane))
+                last_paint = now
+        finished = True
+    finally:
+        commit_assistant(history, topic, acc, company="OpenAI", pane=pane)
+        set_ctx_run(topic, pane, busy=False)
+        reset_ctx_controls(topic, pane)
+    return finished
+
+
+def render_input_context_block(topic: str, header_html: str) -> None:
+    recover_ctx_lock(topic)
+    for pane in CTX_PANES:
+        st.session_state.setdefault(ctx_chat_key(topic, pane), [])
+        if not ctx_busy(topic, pane):
+            settle_partial_assistant(topic, pane=pane)
+    st.html(f"<div class='ctx-split-head'>{header_html}</div>")
+    with st.container(key="ctx_split", horizontal=True, wrap=False, gap="medium"):
+        shells: dict[str, object] = {}
+        prompts: dict[str, object] = {}
+        for pane in CTX_PANES:
+            with st.container(key=f"ctx_pane_{ctx_pane_id(topic, pane)}", gap=None):
+                render_ctx_buttons(topic, pane)
+                shell = st.empty()
+                shell.html(ctx_pane_html(topic, pane))
+                shells[pane] = shell
+                _fill_ctx_input(topic, pane)
+                prompts[pane] = st.chat_input(
+                    "Ask me a question" if ctx_has_thread(topic, pane) else "Ask a question",
+                    key=ctx_input_key(topic, pane),
+                    disabled=ctx_busy(topic, pane),
+                    accept_file=False,
+                )
+    for pane in CTX_PANES:
+        if stream_ctx_pane(topic, pane, shells[pane]):
+            for other in CTX_PANES:
+                if other == pane:
+                    continue
+                text = _ctx_prompt_text(prompts.get(other))
+                if text and not ctx_busy(topic, other):
+                    begin_ctx_request(topic, other, text)
+            st.rerun()
+    started = False
+    for pane in CTX_PANES:
+        text = _ctx_prompt_text(prompts.get(pane))
+        if text and not ctx_busy(topic, pane):
+            begin_ctx_request(topic, pane, text)
+            started = True
+    if started:
+        st.rerun()
+
+
 def render_rlhf_buttons() -> None:
     models = RLHF_CATALOG[ensure_rlhf_company()]
     with st.container(key="rlhf_picker", gap=None):
@@ -1444,6 +2453,13 @@ def render(
     number = (lecture or "5").split()[-1]
     is_rlhf = topic == "RLHF-aligned Model"
     is_llama = topic in LLAMA_TOPICS
+    is_ctx = topic in INPUT_CONTEXT_TOPICS
+    header_html = (
+        "<div class='lesson-block-header'>"
+        f"<div class='lesson-number'>{escape(number)}</div>"
+        f"{crumbs}"
+        "</div>"
+    )
     if is_rlhf:
         recover_rlhf_lock()
         ensure_rlhf_company()
@@ -1464,12 +2480,9 @@ def render(
     ready = (not is_rlhf) or rlhf_ready()
 
     with st.container(key="lesson_block", gap=None):
-        header_html = (
-            "<div class='lesson-block-header'>"
-            f"<div class='lesson-number'>{escape(number)}</div>"
-            f"{crumbs}"
-            "</div>"
-        )
+        if is_ctx:
+            render_input_context_block(topic, header_html)
+            return
         if is_rlhf:
             render_rlhf_buttons()
             topbar_html = rlhf_bar_html()
@@ -1499,9 +2512,7 @@ def render(
         )
 
         def lesson_html() -> str:
-            generating = (
-                (is_rlhf and rlhf_busy()) or (is_llama and llama_busy(topic))
-            )
+            generating = (is_rlhf and rlhf_busy()) or (is_llama and llama_busy(topic))
             flag = "1" if generating else "0"
             scope_attr = (
                 f" data-llama-scope='{llama_scope(topic)}'" if is_llama else ""
@@ -1681,7 +2692,11 @@ def render(
             if pending.get("type") != "files":
                 schedule_control_reset()
             st.rerun()
-        if prompt and not (is_rlhf and rlhf_busy()) and not (is_llama and llama_busy(topic)):
+        if (
+            prompt
+            and not (is_rlhf and rlhf_busy())
+            and not (is_llama and llama_busy(topic))
+        ):
             history = st.session_state[key]
             if isinstance(prompt, str):
                 text, files = prompt.strip(), []
