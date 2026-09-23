@@ -69,7 +69,7 @@ def inject_css() -> None:
     st.html(
         """
         <div hidden data-lecture-chrome="1"></div>
-        <script src="/app/static/lecture_chrome.js?v=52"></script>
+        <script src="/app/static/lecture_chrome.js?v=53"></script>
         """,
         unsafe_allow_javascript=True,
     )
