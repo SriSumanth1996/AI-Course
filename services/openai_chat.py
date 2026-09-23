@@ -19,10 +19,11 @@ def build_request(
     *,
     document: str = "",
     controls: dict[str, object] | None = None,
+    kind: str = "default",
 ) -> dict[str, object]:
     request: dict[str, object] = {
         "model": model_id,
-        "messages": llm_messages(messages, document),
+        "messages": llm_messages(messages, document, kind=kind),
         "stream": True,
     }
     if controls:
@@ -36,6 +37,7 @@ def chat(
     *,
     document: str = "",
     controls: dict[str, object] | None = None,
+    kind: str = "default",
 ) -> str:
     return "".join(
         stream_tokens(
@@ -43,6 +45,7 @@ def chat(
             messages,
             document=document,
             controls=controls,
+            kind=kind,
         )
     )
 
@@ -53,6 +56,7 @@ def stream_tokens(
     *,
     document: str = "",
     controls: dict[str, object] | None = None,
+    kind: str = "default",
 ) -> Iterator[str]:
     key = openai_api_key()
     if not key:
@@ -64,6 +68,7 @@ def stream_tokens(
         messages,
         document=document,
         controls=controls,
+        kind=kind,
     )
 
     try:
