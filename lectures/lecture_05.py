@@ -2060,10 +2060,6 @@ def ctx_doc_html(topic: str) -> str:
     )
 
 
-def ctx_pick_id(label: str) -> str:
-    return label.replace(".", "_")
-
-
 def ensure_ctx_output_length(topic: str, pane: str) -> str:
     key = ctx_key(topic, pane, "output_length")
     label = st.session_state.get(key)
@@ -2088,6 +2084,41 @@ def ensure_ctx_temperature(topic: str, pane: str) -> float | None:
 def reset_ctx_controls(topic: str, pane: str) -> None:
     st.session_state[ctx_key(topic, pane, "output_length")] = DEFAULT_OUTPUT_LENGTH
     st.session_state[ctx_key(topic, pane, "temperature")] = None
+    st.session_state[ctx_key(topic, pane, "controls_ok")] = False
+
+
+def ctx_controls_ready(topic: str, pane: str) -> bool:
+    return bool(st.session_state.get(ctx_key(topic, pane, "controls_ok")))
+
+
+def apply_ctx_control_draft(topic: str, pane: str) -> None:
+    if ctx_busy(topic, pane):
+        return
+    slot = ctx_pane_id(topic, pane)
+    raw = (st.session_state.get(f"ctx_controls_draft_{slot}") or "").strip()
+    data: dict = {}
+    if raw:
+        try:
+            parsed = json.loads(raw)
+        except json.JSONDecodeError:
+            return
+        if not isinstance(parsed, dict):
+            return
+        data = parsed
+    length = data.get("output_length") or DEFAULT_OUTPUT_LENGTH
+    if length not in OUTPUT_LENGTHS:
+        return
+    temp_label = data.get("temperature")
+    if temp_label in (None, ""):
+        temp_label = "Auto"
+    if temp_label != "Auto":
+        try:
+            temp_label = f"{min(2.0, max(0.0, float(temp_label))):.1f}"
+        except (TypeError, ValueError):
+            return
+    select_ctx_output_length(topic, pane, length)
+    select_ctx_temperature(topic, pane, str(temp_label))
+    st.session_state[ctx_key(topic, pane, "controls_ok")] = True
 
 
 def select_ctx_output_length(topic: str, pane: str, label: str) -> None:
@@ -2123,47 +2154,40 @@ def ctx_request_controls(pending: dict | None) -> dict[str, object]:
     )
 
 
-def ctx_dropdown_html(
-    title: str,
-    current: str,
-    options: list[str],
-    attr: str,
-    locked: bool,
-) -> str:
-    caret = '<span class="rlhf-caret-btn" aria-hidden="true"></span>'
-    items = "".join(
-        (
-            f'<span class="rlhf-dd-item{" is-active" if label == current else ""}" '
-            f'role="button" tabindex="0" {attr}="{escape(label)}">{escape(label)}</span>'
-        )
-        for label in options
-    )
-    toggle = (
-        f"<span class='ctx-pick-name'>{escape(title)}</span>"
-        f"<span class='ctx-pick-value'>{escape(current)}</span>"
-        f"{caret}"
-    )
-    if locked:
-        return (
-            "<div class='rlhf-dd ctx-pick'>"
-            f"<div class='rlhf-dd-toggle'>{toggle}</div>"
-            "</div>"
-        )
-    return (
-        "<details class='rlhf-dd ctx-pick'>"
-        f"<summary class='rlhf-dd-toggle'>{toggle}</summary>"
-        f"<div class='rlhf-dd-menu'>{items}</div>"
-        "</details>"
-    )
-
-
 def ctx_controls_html(topic: str, pane: str, locked: bool) -> str:
     tokens = ensure_ctx_output_length(topic, pane)
     temperature = ctx_temperature_label(topic, pane)
     temp_options = ["Auto", *[f"{step:.1f}" for step in TEMPERATURE_STEPS]]
+    caret = '<span class="rlhf-caret-btn" aria-hidden="true"></span>'
+    toggle_label = "Controls ✓" if ctx_controls_ready(topic, pane) else "Controls"
+    toggle = f"<span>{toggle_label}</span>{caret}"
+    tokens_row = _enabled_row(
+        "tok",
+        "Max tokens",
+        tokens,
+        "Output length",
+        _control_options("tok", list(OUTPUT_LENGTHS), tokens, OUTPUT_LENGTH_HINTS),
+    )
+    temperature_row = _enabled_row(
+        "tmp",
+        "Temperature",
+        temperature,
+        "Temperature",
+        _control_options("tmp", temp_options, temperature),
+    )
+    ok = "<span class='rlhf-ctrl-ok' role='button' tabindex='0' data-ctx-ctrl-ok='1'>OK</span>"
+    menu = tokens_row + temperature_row + ok
+    if locked:
+        return (
+            "<div class='rlhf-dd rlhf-controls'>"
+            f"<div class='rlhf-dd-toggle'>{toggle}</div>"
+            "</div>"
+        )
     return (
-        ctx_dropdown_html("Max tokens", tokens, list(OUTPUT_LENGTHS), "data-ctx-tok", locked)
-        + ctx_dropdown_html("Temperature", temperature, temp_options, "data-ctx-temp", locked)
+        "<details class='rlhf-dd rlhf-controls'>"
+        f"<summary class='rlhf-dd-toggle'>{toggle}</summary>"
+        f"<div class='rlhf-dd-menu'>{menu}</div>"
+        "</details>"
     )
 
 
@@ -2228,27 +2252,18 @@ def ctx_pane_html(topic: str, pane: str) -> str:
 def render_ctx_buttons(topic: str, pane: str) -> None:
     slot = ctx_pane_id(topic, pane)
     with st.container(key=f"ctx_picker_{slot}", gap=None):
-        for label in OUTPUT_LENGTHS:
-            st.button(
-                label,
-                key=f"ctx_tok_{slot}_{ctx_pick_id(label)}",
-                on_click=select_ctx_output_length,
-                args=(topic, pane, label),
+        with st.form(f"ctx_ctrl_form_{slot}", border=False):
+            st.text_area(
+                "controls_draft",
+                key=f"ctx_controls_draft_{slot}",
+                label_visibility="collapsed",
             )
-        st.button(
-            "Auto",
-            key=f"ctx_temp_{slot}_Auto",
-            on_click=select_ctx_temperature,
-            args=(topic, pane, "Auto"),
-        )
-        for step in TEMPERATURE_STEPS:
-            label = f"{step:.1f}"
-            st.button(
-                label,
-                key=f"ctx_temp_{slot}_{ctx_pick_id(label)}",
-                on_click=select_ctx_temperature,
-                args=(topic, pane, label),
+            submitted = st.form_submit_button(
+                "Apply controls",
+                key=f"ctx_ctrl_ok_{slot}",
             )
+        if submitted:
+            apply_ctx_control_draft(topic, pane)
         st.button(
             "Clear",
             key=f"ctx_clear_{slot}",
