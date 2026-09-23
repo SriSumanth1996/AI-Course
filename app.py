@@ -65,495 +65,11 @@ def header_greeting_html(lecture: str | None) -> str:
 
 
 def inject_css() -> None:
-    css = STYLES.read_text(encoding="utf-8")
+    st.html(STYLES)
     st.html(
-        "<link rel='stylesheet' href='https://fonts.googleapis.com/css2?family=Inter:ital,wght@0,400;0,500;0,600;0,700;0,800;1,400;1,500&display=swap'>"
-        f"<style>{css}</style>"
         """
-        <script>
-        (function () {
-          if (window.__lectureChrome === 36) return;
-          window.__lectureChrome = 36;
-          window.__crumbForward = true;
-          window.__rlhfForward = true;
-
-          function clickHidden(key) {
-            if (!key) return false;
-            var nodes = document.querySelectorAll('[class*="st-key-' + key + '"]');
-            for (var i = 0; i < nodes.length; i++) {
-              var node = nodes[i];
-              var btn = node.tagName === "BUTTON" ? node : node.querySelector("button");
-              if (btn) {
-                btn.click();
-                return true;
-              }
-            }
-            if (key === "rlhf_ctrl_ok" || key.indexOf("llama_ctrl_ok") === 0) {
-              var formKey = key.indexOf("llama_ctrl_ok") === 0
-                ? key.replace("llama_ctrl_ok", "llama_ctrl_form")
-                : "rlhf_ctrl_form";
-              var submit = document.querySelector(
-                '[class*="st-key-' + formKey + '"] button, [data-testid="stFormSubmitButton"] button'
-              );
-              if (submit) {
-                submit.click();
-                return true;
-              }
-            }
-            return false;
-          }
-
-          function activePick(menu, kind) {
-            var active = menu.querySelector('[data-rlhf-pick="' + kind + '"].is-active');
-            if (active) return active.getAttribute("data-rlhf-value");
-            var current = menu.querySelector('[data-rlhf-row="' + kind + '"] .rlhf-control-current');
-            if (current) {
-              var text = (current.textContent || "").trim();
-              if (text) return text;
-            }
-            return "Auto";
-          }
-
-          function collectRlhfDraft(menu) {
-            var draft = {
-              output_length: activePick(menu, "tok"),
-              reasoning: activePick(menu, "rsn"),
-              verbosity: activePick(menu, "vrb"),
-              temperature: null
-            };
-            var tempEnabled = menu.querySelector("[data-temp-enabled]");
-            var tempVisible = !tempEnabled || tempEnabled.style.display !== "none";
-            var manual = menu.querySelector('[data-rlhf-temp-mode="Manual"].is-active');
-            var tempCurrent = menu.querySelector('[data-rlhf-row="tmp"] .rlhf-control-current');
-            var tempLabel = tempCurrent ? (tempCurrent.textContent || "").trim() : "";
-            if (tempVisible && manual) {
-              var rangeEl = menu.querySelector("[data-rlhf-temp-range]");
-              draft.temperature = rangeEl ? parseFloat(rangeEl.value) : 0.7;
-            } else if (tempLabel && tempLabel !== "Auto" && tempLabel !== "Not supported") {
-              var parsed = parseFloat(tempLabel);
-              if (!isNaN(parsed)) draft.temperature = parsed;
-            }
-            return draft;
-          }
-
-          function writeDraft(key, draft) {
-            var input = document.querySelector(
-              '[class*="st-key-' + key + '"] textarea, ' +
-              '[class*="st-key-' + key + '"] input'
-            );
-            if (!input) return false;
-            var proto = input.tagName === "TEXTAREA" ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
-            var setter = Object.getOwnPropertyDescriptor(proto, "value").set;
-            setter.call(input, JSON.stringify(draft));
-            input.dispatchEvent(new Event("input", { bubbles: true }));
-            input.dispatchEvent(new Event("change", { bubbles: true }));
-            return true;
-          }
-
-          function writeRlhfDraft(draft) {
-            return writeDraft("rlhf_controls_draft", draft);
-          }
-
-          function rangeDraft(menu, kind) {
-            var fly = menu.querySelector('[data-rlhf-row="' + kind + '"]');
-            if (!fly) return null;
-            var manual = fly.querySelector('[data-range-choice="Manual"].is-active');
-            var current = fly.querySelector(".rlhf-control-current");
-            var label = current ? (current.textContent || "").trim() : "";
-            if (manual) {
-              var rangeEl = fly.querySelector("[data-range-input]");
-              return rangeEl ? parseFloat(rangeEl.value) : null;
-            }
-            if (label && label !== "Auto") {
-              var parsed = parseFloat(label);
-              if (!isNaN(parsed)) return parsed;
-            }
-            return null;
-          }
-
-          function collectLlamaDraft(menu) {
-            return {
-              output_length: activePick(menu, "tok"),
-              temperature: rangeDraft(menu, "tmp"),
-              top_p: rangeDraft(menu, "topp"),
-              frequency_penalty: rangeDraft(menu, "freq")
-            };
-          }
-
-          function formatRange(value, digits) {
-            var text = parseFloat(value).toFixed(digits);
-            if (text.indexOf(".") >= 0) text = text.replace(/0+$/, "").replace(/[.]$/, "");
-            return text || "0";
-          }
-
-          function llamaScope() {
-            var el = document.querySelector("[data-llama-scope]");
-            return el ? (el.getAttribute("data-llama-scope") || "") : "";
-          }
-
-          function writeLlamaDraft(draft) {
-            var scope = llamaScope();
-            return writeDraft(scope ? "llama_" + scope + "_controls_draft" : "llama_controls_draft", draft);
-          }
-
-          var allow = { ArrowDown: 1, ArrowUp: 1, Enter: 1, Escape: 1, Tab: 1, Home: 1, End: 1 };
-
-          function lockInput(el) {
-            el.setAttribute("readonly", "readonly");
-            el.setAttribute("inputmode", "none");
-            el.setAttribute("autocomplete", "off");
-            el.style.caretColor = "transparent";
-            if (el.dataset.dropdownLocked === "1") return;
-            el.dataset.dropdownLocked = "1";
-            function block(e) {
-              if (e.type === "keydown" && allow[e.key]) return;
-              e.preventDefault();
-              e.stopImmediatePropagation();
-            }
-            ["keydown", "keypress", "beforeinput", "paste", "cut", "drop"].forEach(function (type) {
-              el.addEventListener(type, block, true);
-            });
-          }
-
-          function wireOpenOnClick(select) {
-            if (select.dataset.fullClick === "1") return;
-            select.dataset.fullClick = "1";
-            select.addEventListener("click", function (e) {
-              if (select.querySelector("input:disabled")) return;
-              if (select.getAttribute("aria-disabled") === "true") return;
-              if (e.target.closest("svg")) return;
-              var svgs = select.querySelectorAll("svg");
-              var chevron = null;
-              svgs.forEach(function (svg) {
-                var path = svg.querySelector("path");
-                var d = path ? path.getAttribute("d") || "" : "";
-                if (d.indexOf("M12 2C6.47") === -1) chevron = svg;
-              });
-              if (!chevron && svgs.length) chevron = svgs[svgs.length - 1];
-              if (!chevron) return;
-              var host = chevron.closest("button") || chevron.parentElement;
-              ["mousedown", "mouseup", "click"].forEach(function (type) {
-                host.dispatchEvent(new window.MouseEvent(type, { bubbles: true, cancelable: true, view: window }));
-              });
-            });
-          }
-
-          function fitChatInput(el) {
-            if (el.dataset.fitting === "1") return;
-            el.dataset.fitting = "1";
-            el.style.setProperty("padding", "0px", "important");
-            el.style.setProperty("color", "#111111", "important");
-            el.style.setProperty("-webkit-text-fill-color", "#111111", "important");
-            el.style.setProperty("caret-color", "#111111", "important");
-            el.style.setProperty("height", "auto", "important");
-            var next = el.value ? Math.min(Math.max(el.scrollHeight, 22), 88) : 22;
-            el.style.setProperty("height", next + "px", "important");
-            el.style.setProperty("overflow-y", next >= 88 ? "auto" : "hidden", "important");
-            if (next < 88) el.scrollTop = 0;
-            requestAnimationFrame(function () {
-              el.dataset.fitting = "0";
-            });
-          }
-
-          function wireChatInput(el) {
-            if (el.dataset.chatFit === "1") return;
-            el.dataset.chatFit = "1";
-            ["input", "keyup", "keydown", "change", "paste"].forEach(function (type) {
-              el.addEventListener(type, function () {
-                fitChatInput(el);
-                requestAnimationFrame(function () { fitChatInput(el); });
-              });
-            });
-            fitChatInput(el);
-          }
-
-          function pinThread(el) {
-            if (!el.dataset.chatScrollWired) {
-              el.dataset.chatScrollWired = "1";
-              el.dataset.stickBottom = "1";
-              el.addEventListener("scroll", function () {
-                var gap = el.scrollHeight - el.scrollTop - el.clientHeight;
-                el.dataset.stickBottom = gap < 80 ? "1" : "0";
-              }, { passive: true });
-            }
-            if (el.dataset.stickBottom !== "0") {
-              el.scrollTop = el.scrollHeight;
-            }
-          }
-
-          var fileHint = "Accepts Word, PDF or text only";
-          var fileReject = "Only Word, PDF or text files are accepted.";
-
-          function hintFileUi() {
-            document.querySelectorAll('[data-testid="stChatInputFileUploadButton"]').forEach(function (btn) {
-              btn.setAttribute("aria-label", fileHint);
-            });
-            document.querySelectorAll('[data-testid="stTooltipContent"]').forEach(function (el) {
-              var text = el.textContent || "";
-              if (/Upload or drag|drag and drop|Accepts Word, PDF or text only/i.test(text)) {
-                el.textContent = fileHint;
-                if (el.parentElement) el.parentElement.style.display = "none";
-              }
-            });
-            document.querySelectorAll('[data-testid="stTooltipErrorContent"]').forEach(function (el) {
-              var text = el.textContent || "";
-              if (/not allowed/i.test(text)) el.textContent = fileReject;
-            });
-            document.querySelectorAll('[data-testid="stFileChip"] [role="alert"]').forEach(function (el) {
-              var text = el.textContent || "";
-              if (/not allowed/i.test(text)) el.textContent = "Error: " + fileReject;
-            });
-          }
-
-          function wireTempRange() {
-            document.querySelectorAll("[data-rlhf-temp-range]").forEach(function (el) {
-              if (el.dataset.tempWired === "1") return;
-              el.dataset.tempWired = "1";
-              el.addEventListener("input", function () {
-                var value = parseFloat(el.value).toFixed(1);
-                var readout = el.parentElement && el.parentElement.querySelector(".rlhf-temp-readout");
-                if (readout) readout.textContent = value;
-                var fly = el.closest(".rlhf-control-flyout");
-                var label = fly && fly.querySelector(".rlhf-control-current");
-                if (label) label.textContent = value;
-              });
-            });
-            document.querySelectorAll("[data-range-input]").forEach(function (el) {
-              if (el.dataset.rangeWired === "1") return;
-              el.dataset.rangeWired = "1";
-              el.addEventListener("input", function () {
-                var digits = parseInt(el.getAttribute("data-range-digits") || "1", 10);
-                var value = formatRange(el.value, digits);
-                var readout = el.parentElement && el.parentElement.querySelector(".rlhf-temp-readout");
-                if (readout) readout.textContent = value;
-                var fly = el.closest(".rlhf-control-flyout");
-                var label = fly && fly.querySelector(".rlhf-control-current");
-                if (label) label.textContent = value;
-              });
-            });
-          }
-
-          function wireStopOverlay() {
-            var generating = !!document.querySelector(".model-chat-shell[data-generating='1']");
-            var block = document.querySelector(".st-key-lesson_block");
-            if (block) block.classList.toggle("is-generating", generating);
-            var host = document.querySelector(
-              '.st-key-lesson_block [data-testid="stChatInput"] div:has(> [data-testid="stChatInputSubmitButton"])'
-            );
-            if (!host) return;
-            var overlay = host.querySelector("[data-chat-stop]");
-            if (generating) {
-              if (!overlay) {
-                overlay = document.createElement("button");
-                overlay.type = "button";
-                overlay.setAttribute("data-chat-stop", "1");
-                overlay.setAttribute("aria-label", "Stop generating");
-                overlay.className = "chat-stop-overlay";
-                host.appendChild(overlay);
-              }
-            } else if (overlay) {
-              overlay.remove();
-            }
-          }
-
-          function scan() {
-            document.querySelectorAll('[data-testid="stSelectbox"] input, [data-baseweb="select"] input').forEach(lockInput);
-            document.querySelectorAll('[data-baseweb="select"]').forEach(wireOpenOnClick);
-            document.querySelectorAll('[data-testid="stChatInput"] textarea, [data-testid="stChatInputTextArea"]').forEach(wireChatInput);
-            document.querySelectorAll(".model-chat-thread").forEach(pinThread);
-            hintFileUi();
-            wireTempRange();
-            wireStopOverlay();
-          }
-
-          document.addEventListener("click", function (e) {
-            var stopBtn = e.target.closest("[data-chat-stop]");
-            if (stopBtn) {
-              e.preventDefault();
-              e.stopPropagation();
-              clickHidden("chat_stop");
-              return;
-            }
-            var crumb = e.target.closest(".crumb-link");
-            if (crumb) {
-              e.preventDefault();
-              clickHidden("crumb_" + (crumb.getAttribute("data-level") || "lecture"));
-              return;
-            }
-            if (e.target.closest(".rlhf-bar.is-locked")) {
-              e.preventDefault();
-              return;
-            }
-            var companyOpt = e.target.closest("[data-rlhf-company]");
-            if (companyOpt) {
-              e.preventDefault();
-              clickHidden("rlhf_co_" + companyOpt.getAttribute("data-rlhf-company"));
-              return;
-            }
-            var llamaModeOpt = e.target.closest("[data-llama-mode]");
-            if (llamaModeOpt) {
-              e.preventDefault();
-              clickHidden("llama_mode_" + llamaScope() + "_" + llamaModeOpt.getAttribute("data-llama-mode"));
-              return;
-            }
-            var modeOpt = e.target.closest("[data-rlhf-mode]");
-            if (modeOpt) {
-              e.preventDefault();
-              clickHidden("rlhf_mode_" + modeOpt.getAttribute("data-rlhf-mode"));
-              return;
-            }
-            var modelOpt = e.target.closest("[data-rlhf-model]");
-            if (modelOpt) {
-              e.preventDefault();
-              clickHidden("rlhf_md_" + modelOpt.getAttribute("data-rlhf-model"));
-              return;
-            }
-            var pickOpt = e.target.closest("[data-rlhf-pick]");
-            if (pickOpt) {
-              e.preventDefault();
-              var menu = pickOpt.closest(".rlhf-dd-menu");
-              var kind = pickOpt.getAttribute("data-rlhf-pick") || "";
-              var value = pickOpt.getAttribute("data-rlhf-value") || "";
-              if (menu) {
-                menu.querySelectorAll('[data-rlhf-pick="' + kind + '"]').forEach(function (item) {
-                  item.classList.toggle("is-active", item.getAttribute("data-rlhf-value") === value);
-                });
-                var current = menu.querySelector('[data-rlhf-row="' + kind + '"] .rlhf-control-current');
-                if (current) current.textContent = value;
-                var block = menu.querySelector("[data-temp-policy='reasoning_none']");
-                if (block && kind === "rsn") {
-                  var on = value === "None";
-                  var enabled = block.querySelector("[data-temp-enabled]");
-                  var locked = block.querySelector("[data-temp-locked]");
-                  if (enabled) enabled.style.display = on ? "block" : "none";
-                  if (locked) locked.style.display = on ? "none" : "block";
-                }
-              }
-              return;
-            }
-            var rangeMode = e.target.closest("[data-range-choice]");
-            if (rangeMode) {
-              e.preventDefault();
-              var rangeCard = rangeMode.closest(".rlhf-length-card");
-              var choice = rangeMode.getAttribute("data-range-choice") || "Auto";
-              if (rangeCard) {
-                rangeCard.querySelectorAll("[data-range-choice]").forEach(function (item) {
-                  item.classList.toggle("is-active", item === rangeMode);
-                });
-                var slider = rangeCard.querySelector(".rlhf-temp-slider");
-                if (slider) slider.classList.toggle("is-hidden", choice !== "Manual");
-                var rowCur = rangeMode.closest(".rlhf-control-flyout");
-                var label = rowCur && rowCur.querySelector(".rlhf-control-current");
-                if (label) {
-                  if (choice === "Auto") label.textContent = "Auto";
-                  else {
-                    var range = rangeCard.querySelector("[data-range-input]");
-                    var digits = range ? parseInt(range.getAttribute("data-range-digits") || "1", 10) : 1;
-                    label.textContent = range ? formatRange(range.value, digits) : "0";
-                  }
-                }
-              }
-              return;
-            }
-            var tempMode = e.target.closest("[data-rlhf-temp-mode]");
-            if (tempMode) {
-              e.preventDefault();
-              var tempCard = tempMode.closest(".rlhf-length-card");
-              var mode = tempMode.getAttribute("data-rlhf-temp-mode") || "Auto";
-              if (tempCard) {
-                tempCard.querySelectorAll("[data-rlhf-temp-mode]").forEach(function (item) {
-                  item.classList.toggle("is-active", item === tempMode);
-                });
-                var slider = tempCard.querySelector(".rlhf-temp-slider");
-                if (slider) slider.classList.toggle("is-hidden", mode !== "Manual");
-                var rowCur = tempMode.closest(".rlhf-control-flyout");
-                var label = rowCur && rowCur.querySelector(".rlhf-control-current");
-                if (label) {
-                  if (mode === "Auto") label.textContent = "Auto";
-                  else {
-                    var range = tempCard.querySelector("[data-rlhf-temp-range]");
-                    label.textContent = range ? parseFloat(range.value).toFixed(1) : "0.7";
-                  }
-                }
-              }
-              return;
-            }
-            var llamaOkCtrl = e.target.closest("[data-llama-ctrl-ok]");
-            if (llamaOkCtrl) {
-              e.preventDefault();
-              var llamaOkMenu = llamaOkCtrl.closest(".rlhf-dd-menu");
-              if (llamaOkMenu) {
-                writeLlamaDraft(collectLlamaDraft(llamaOkMenu));
-                var llamaOkKey = "llama_ctrl_ok_" + llamaScope();
-                setTimeout(function () {
-                  clickHidden(llamaOkKey);
-                }, 80);
-                setTimeout(function () {
-                  clickHidden(llamaOkKey);
-                }, 220);
-              }
-              return;
-            }
-            var okCtrl = e.target.closest("[data-rlhf-ctrl-ok]");
-            if (okCtrl) {
-              e.preventDefault();
-              var okMenu = okCtrl.closest(".rlhf-dd-menu");
-              if (okMenu) {
-                writeRlhfDraft(collectRlhfDraft(okMenu));
-                setTimeout(function () {
-                  clickHidden("rlhf_ctrl_ok");
-                }, 80);
-                setTimeout(function () {
-                  clickHidden("rlhf_ctrl_ok");
-                }, 220);
-              }
-              return;
-            }
-            var flyToggle = e.target.closest("summary.rlhf-control-row");
-            if (flyToggle) {
-              var fly = flyToggle.closest(".rlhf-control-flyout");
-              document.querySelectorAll(".rlhf-control-flyout").forEach(function (el) {
-                if (el !== fly) el.removeAttribute("open");
-              });
-              return;
-            }
-            var clearChat = e.target.closest("[data-rlhf-clear], [data-llama-clear]");
-            if (clearChat) {
-              e.preventDefault();
-              clickHidden(clearChat.hasAttribute("data-llama-clear") ? "llama_clear_" + llamaScope() : "rlhf_clear");
-              return;
-            }
-            var topToggle = e.target.closest("summary.rlhf-dd-toggle");
-            if (topToggle) {
-              var host = topToggle.closest(".rlhf-dd");
-              document.querySelectorAll(".rlhf-dd").forEach(function (el) {
-                if (el !== host) el.removeAttribute("open");
-              });
-              return;
-            }
-            if (!e.target.closest(".rlhf-dd")) {
-              document.querySelectorAll(".rlhf-dd, .rlhf-control-flyout").forEach(function (el) {
-                el.removeAttribute("open");
-              });
-            }
-          }, true);
-
-          ["input", "keyup", "paste"].forEach(function (type) {
-            document.addEventListener(type, function (e) {
-              var el = e.target && e.target.closest && e.target.closest(
-                '[data-testid="stChatInput"] textarea, [data-testid="stChatInputTextArea"]'
-              );
-              if (el) {
-                fitChatInput(el);
-                requestAnimationFrame(function () { fitChatInput(el); });
-              }
-            }, true);
-          });
-
-          scan();
-          new MutationObserver(scan).observe(document.body, { childList: true, subtree: true });
-        })();
-        </script>
+        <div hidden data-lecture-chrome="1"></div>
+        <script src="/app/static/lecture_chrome.js?v=52"></script>
         """,
         unsafe_allow_javascript=True,
     )
@@ -561,11 +77,21 @@ def inject_css() -> None:
 
 def clear_sub_lecture() -> None:
     st.session_state.sub_lecture_select = None
-    st.session_state.topic_select = None
+    reset_topic()
+
+
+def reset_topic() -> None:
+    sub = st.session_state.get("sub_lecture_select")
+    st.session_state[f"topic_select::{sub}"] = None
+
+
+def reset_after_lecture() -> None:
+    st.session_state.sub_lecture_select = None
+    reset_topic()
 
 
 def clear_topic() -> None:
-    st.session_state.topic_select = None
+    reset_topic()
 
 
 def breadcrumb_html(
@@ -651,7 +177,12 @@ def render_workspace(
         ring = number
         heading = sub_lecture
         topic_options = TOPICS.get((lecture, sub_lecture), [])
-        pick_topic = getattr(chapter, "PICK_TOPIC", "") if chapter else ""
+        pick_map = getattr(chapter, "PICK_TOPIC_BY_SUB", None) if chapter else None
+        pick_topic = ""
+        if isinstance(pick_map, dict):
+            pick_topic = pick_map.get(sub_lecture, "")
+        if not pick_topic:
+            pick_topic = getattr(chapter, "PICK_TOPIC", "") if chapter else ""
         body = (
             pick_topic
             if topic_options and pick_topic
@@ -716,11 +247,8 @@ with st.sidebar:
         placeholder="Select a lecture",
         accept_new_options=False,
         key="lecture_select",
+        on_change=reset_after_lecture,
     )
-    if st.session_state.get("_last_lecture") != lecture:
-        st.session_state.pop("sub_lecture_select", None)
-        st.session_state.pop("topic_select", None)
-        st.session_state._last_lecture = lecture
     sub_options = SUB_LECTURES.get(lecture or "", [])
     if sub_options:
         sub_lecture = st.selectbox(
@@ -730,6 +258,7 @@ with st.sidebar:
             placeholder="Select a sub lecture",
             accept_new_options=False,
             key="sub_lecture_select",
+            on_change=reset_topic,
         )
     else:
         sub_lecture = None
@@ -741,9 +270,6 @@ with st.sidebar:
             accept_new_options=False,
             key="sub-disabled",
         )
-    if st.session_state.get("_last_sub") != sub_lecture:
-        st.session_state.pop("topic_select", None)
-        st.session_state._last_sub = sub_lecture
     topic_options = TOPICS.get((lecture or "", sub_lecture or ""), [])
     if topic_options:
         topic = st.selectbox(
@@ -752,8 +278,10 @@ with st.sidebar:
             index=None,
             placeholder="Select a topic",
             accept_new_options=False,
-            key="topic_select",
+            key=f"topic_select::{sub_lecture}",
         )
+        if topic not in topic_options:
+            topic = None
     else:
         topic = None
 
