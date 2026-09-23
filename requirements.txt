@@ -1,4 +1,4 @@
-streamlit>=1.40.0
+streamlit==1.63.0
 pymupdf4llm>=1.28.2
 python-docx>=1.2.0
 openai>=1.60.0
