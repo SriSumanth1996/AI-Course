@@ -1,6 +1,6 @@
 (function () {
-          if (window.__lectureChrome === 52) return;
-          window.__lectureChrome = 52;
+          if (window.__lectureChrome === 53) return;
+          window.__lectureChrome = 53;
           window.__crumbForward = true;
           window.__rlhfForward = true;
 
@@ -15,13 +15,16 @@
                 return true;
               }
             }
-            if (key === "rlhf_ctrl_ok" || key.indexOf("llama_ctrl_ok") === 0) {
-              var formKey = key.indexOf("llama_ctrl_ok") === 0
-                ? key.replace("llama_ctrl_ok", "llama_ctrl_form")
-                : "rlhf_ctrl_form";
-              var submit = document.querySelector(
-                '[class*="st-key-' + formKey + '"] button, [data-testid="stFormSubmitButton"] button'
-              );
+            if (key === "rlhf_ctrl_ok" || key.indexOf("llama_ctrl_ok") === 0 || key.indexOf("ctx_ctrl_ok_") === 0) {
+              var formKey = key === "rlhf_ctrl_ok"
+                ? "rlhf_ctrl_form"
+                : key.indexOf("llama_ctrl_ok") === 0
+                  ? key.replace("llama_ctrl_ok", "llama_ctrl_form")
+                  : key.replace("ctx_ctrl_ok_", "ctx_ctrl_form_");
+              var submit = document.querySelector('[class*="st-key-' + formKey + '"] button');
+              if (!submit && key.indexOf("ctx_ctrl_ok_") !== 0) {
+                submit = document.querySelector('[data-testid="stFormSubmitButton"] button');
+              }
               if (submit) {
                 submit.click();
                 return true;
@@ -647,6 +650,23 @@
                     label.textContent = range ? parseFloat(range.value).toFixed(1) : "0.7";
                   }
                 }
+              }
+              return;
+            }
+            var ctxOkCtrl = e.target.closest("[data-ctx-ctrl-ok]");
+            if (ctxOkCtrl) {
+              e.preventDefault();
+              var ctxOkMenu = ctxOkCtrl.closest(".rlhf-dd-menu");
+              var ctxOkBar = ctxOkCtrl.closest("[data-ctx-slot]");
+              var ctxOkSlot = ctxOkBar ? (ctxOkBar.getAttribute("data-ctx-slot") || "") : "";
+              if (ctxOkMenu && ctxOkSlot) {
+                writeDraft("ctx_controls_draft_" + ctxOkSlot, {
+                  output_length: activePick(ctxOkMenu, "tok"),
+                  temperature: activePick(ctxOkMenu, "tmp")
+                });
+                var ctxOkKey = "ctx_ctrl_ok_" + ctxOkSlot;
+                setTimeout(function () { clickHidden(ctxOkKey); }, 80);
+                setTimeout(function () { clickHidden(ctxOkKey); }, 220);
               }
               return;
             }
