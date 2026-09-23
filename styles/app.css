@@ -1402,6 +1402,17 @@ iframe[height="0"] {
   max-height: min(240px, 40vh);
 }
 
+.st-key-lesson_block [class*="st-key-ctx_pane_"] .rlhf-controls .rlhf-dd-menu {
+  right: 0;
+  left: auto;
+  overflow: visible;
+}
+
+.st-key-lesson_block [class*="st-key-ctx_pane_"] .rlhf-length-card {
+  max-height: min(280px, 46vh);
+  overflow-y: auto;
+}
+
 .st-key-lesson_block [class*="st-key-ctx_pane_"] [data-testid="stElementContainer"]:has([data-testid="stChatInput"]),
 .st-key-lesson_block [class*="st-key-ctx_pane_"] [data-testid="stChatInput"] {
   flex: 0 0 auto !important;
