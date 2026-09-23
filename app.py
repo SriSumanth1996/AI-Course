@@ -9,6 +9,7 @@ from lectures import LECTURES, SUB_LECTURES, TOPICS, get_lecture
 ROOT = Path(__file__).resolve().parent
 ASSETS = ROOT / "assets"
 STYLES = ROOT / "styles" / "app.css"
+CHROME_JS = ROOT / "static" / "lecture_chrome.js"
 FAVICON = ASSETS / "favicon.svg"
 
 BITSOM_LOGO = (
@@ -66,11 +67,10 @@ def header_greeting_html(lecture: str | None) -> str:
 
 def inject_css() -> None:
     st.html(STYLES)
+    script = CHROME_JS.read_text(encoding="utf-8")
     st.html(
-        """
-        <div hidden data-lecture-chrome="1"></div>
-        <script src="/app/static/lecture_chrome.js?v=53"></script>
-        """,
+        '<div hidden data-lecture-chrome="1"></div>'
+        f"<script>{script}</script>",
         unsafe_allow_javascript=True,
     )
 
