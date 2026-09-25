@@ -219,6 +219,16 @@ def ctx_uses_document(pane: str) -> bool:
     return pane == "context"
 
 
+def ctx_attach_file(topic: str, pane: str) -> bool:
+    """The code file is part of the first message only."""
+    if not ctx_uses_document(pane):
+        return False
+    history = st.session_state.get(ctx_chat_key(topic, pane)) or []
+    return not any(
+        isinstance(item, dict) and item.get("role") == "user" for item in history
+    )
+
+
 def clear_ctx_chat(topic: str, pane: str) -> None:
     if ctx_busy(topic, pane) or not ctx_has_thread(topic, pane):
         return
@@ -234,7 +244,7 @@ def ctx_file_name(topic: str) -> str:
 def begin_ctx_request(topic: str, pane: str, text: str) -> None:
     history = st.session_state.setdefault(ctx_chat_key(topic, pane), [])
     shown = text
-    if ctx_uses_document(pane):
+    if ctx_attach_file(topic, pane):
         shown = f"{text}\n[{ctx_file_name(topic)}]"
     history.append({"role": "user", "content": shown})
     history.append(
@@ -2229,7 +2239,7 @@ def ctx_composer_attrs(topic: str, pane: str) -> str:
         f" data-ctx-thread='{thread}'"
         " data-ctx-armed='1'"
     )
-    if ctx_uses_document(pane):
+    if ctx_attach_file(topic, pane):
         attrs += f" data-ctx-file='{escape(ctx_file_name(topic), quote=True)}'"
     return attrs
 
