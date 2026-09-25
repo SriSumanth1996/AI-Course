@@ -5,7 +5,6 @@ from html import escape
 from pathlib import Path
 
 import streamlit as st
-import streamlit.components.v1 as components
 from lectures import LECTURES, SUB_LECTURES, TOPICS, get_lecture
 
 ROOT = Path(__file__).resolve().parent
@@ -70,16 +69,17 @@ def header_greeting_html(lecture: str | None) -> str:
 def inject_css() -> None:
     st.html(STYLES)
     code = json.dumps(CHROME_JS.read_text(encoding="utf-8"))
-    components.html(
-        "<script>(function () {"
-        "var host = window.parent;"
-        "if (host.__lectureChrome) return;"
-        "var s = host.document.createElement('script');"
-        f"s.textContent = {code};"
-        "host.document.head.appendChild(s);"
-        "})();</script>",
-        height=0,
-    )
+    with st.container(key="chrome_js"):
+        st.iframe(
+            "<script>(function () {"
+            "var host = window.parent;"
+            "if (host.__lectureChrome) return;"
+            "var s = host.document.createElement('script');"
+            f"s.textContent = {code};"
+            "host.document.head.appendChild(s);"
+            "})();</script>",
+            height=1,
+        )
 
 
 def clear_sub_lecture() -> None:
