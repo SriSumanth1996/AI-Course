@@ -4,6 +4,7 @@ python-docx>=1.2.0
 openai>=1.60.0
 torch
 numpy
+plotly
 matplotlib
 pillow
 streamlit-drawable-canvas-fix>=0.9.8
