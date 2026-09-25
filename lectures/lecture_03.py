@@ -5,20 +5,23 @@ import copy
 import streamlit as st
 
 TITLE = "Lecture 3"
-SUB_LECTURES = ["Neural Networks", "Confusion Matrix"]
+SUB_LECTURES = ["Neural Networks", "Confusion Matrix", "Decision Tree"]
 TOPICS = {
     "Neural Networks": ["Neural Networks"],
     "Confusion Matrix": ["Confusion Matrix"],
+    "Decision Tree": ["Decision Tree"],
 }
-PICK_SUB = "Pick Neural Networks or Confusion Matrix to open that section."
+PICK_SUB = "Pick Neural Networks, Confusion Matrix, or Decision Tree to open that section."
 PICK_TOPIC = "Pick Neural Networks to open that section."
 PICK_TOPIC_BY_SUB = {
     "Neural Networks": PICK_TOPIC,
     "Confusion Matrix": "Pick Confusion Matrix to open that section.",
+    "Decision Tree": "Pick Decision Tree to open that section.",
 }
 
 TOPIC_NAME = "Neural Networks"
 CONFUSION_TOPIC = "Confusion Matrix"
+TREE_TOPIC = "Decision Tree"
 
 CANVAS_SIZE = 220
 NEURON_GALLERY_K = 8
@@ -58,6 +61,20 @@ def render(
 
                     render_confusion()
             return
+        if topic == TREE_TOPIC:
+            with st.container(key="dtx_body"):
+                tab_intuition, tab_exercise, tab_practical = st.tabs(["Intuition", "Exercise", "Visualisation"])
+                with tab_intuition:
+                    from services.decision_tree import render_intuition
+
+                    render_intuition()
+                with tab_exercise:
+                    _render_decision_tree()
+                with tab_practical:
+                    from services.decision_tree import render as render_tree
+
+                    render_tree()
+            return
         if topic != TOPIC_NAME:
             return
         with st.container(key="nn_body"):
@@ -71,6 +88,44 @@ def render(
                     _render_label()
             with tab_draw:
                 _render_draw()
+
+
+def _render_decision_tree() -> None:
+    st.html(
+        """
+        <section class="cmx-card dtx-card" aria-labelledby="dtx-title">
+          <div class="cmx-deco" aria-hidden="true"><span class="cmx-dots"></span><span class="cmx-c1"></span><span class="cmx-c2"></span></div>
+          <div class="cmx-kicker">Exercise</div>
+          <h2 id="dtx-title">Which customers will churn?</h2>
+          <p class="dtx-lead dtx-oneline">A telecom company looks at 16 existing customers.<br>For each one it knows the <b>age</b>, <b>support complaints</b>, <b>tenure</b>, <b>monthly bill</b>, and the eventual <b>outcome</b>.</p>
+          <div class="dtx-scroll">
+          <table class="dtx-table">
+            <thead>
+              <tr><th>Customer</th><th class="dtx-num">Age</th><th class="dtx-num">Support complaints</th><th class="dtx-num">Tenure (months)</th><th class="dtx-num">Monthly bill (&#8377;)</th><th>Outcome</th></tr>
+            </thead>
+            <tbody>
+              <tr><td>C01</td><td class="dtx-num">24</td><td class="dtx-num">6</td><td class="dtx-num">5</td><td class="dtx-num">1,450</td><td class="dtx-churned">Churned</td></tr>
+              <tr><td>C02</td><td class="dtx-num">29</td><td class="dtx-num">5</td><td class="dtx-num">8</td><td class="dtx-num">1,180</td><td class="dtx-churned">Churned</td></tr>
+              <tr><td>C03</td><td class="dtx-num">32</td><td class="dtx-num">6</td><td class="dtx-num">14</td><td class="dtx-num">1,620</td><td class="dtx-churned">Churned</td></tr>
+              <tr><td>C04</td><td class="dtx-num">36</td><td class="dtx-num">4</td><td class="dtx-num">22</td><td class="dtx-num">980</td><td class="dtx-churned">Churned</td></tr>
+              <tr><td>C05</td><td class="dtx-num">38</td><td class="dtx-num">5</td><td class="dtx-num">30</td><td class="dtx-num">1,310</td><td class="dtx-churned">Churned</td></tr>
+              <tr><td>C06</td><td class="dtx-num">46</td><td class="dtx-num">4</td><td class="dtx-num">10</td><td class="dtx-num">1,080</td><td class="dtx-churned">Churned</td></tr>
+              <tr><td>C07</td><td class="dtx-num">51</td><td class="dtx-num">2</td><td class="dtx-num">26</td><td class="dtx-num">1,520</td><td class="dtx-churned">Churned</td></tr>
+              <tr><td>C08</td><td class="dtx-num">57</td><td class="dtx-num">1</td><td class="dtx-num">18</td><td class="dtx-num">890</td><td class="dtx-churned">Churned</td></tr>
+              <tr><td>C09</td><td class="dtx-num">26</td><td class="dtx-num">5</td><td class="dtx-num">16</td><td class="dtx-num">1,260</td><td class="dtx-stayed">Stayed</td></tr>
+              <tr><td>C10</td><td class="dtx-num">35</td><td class="dtx-num">4</td><td class="dtx-num">28</td><td class="dtx-num">1,100</td><td class="dtx-stayed">Stayed</td></tr>
+              <tr><td>C11</td><td class="dtx-num">31</td><td class="dtx-num">2</td><td class="dtx-num">7</td><td class="dtx-num">1,480</td><td class="dtx-stayed">Stayed</td></tr>
+              <tr><td>C12</td><td class="dtx-num">43</td><td class="dtx-num">1</td><td class="dtx-num">13</td><td class="dtx-num">920</td><td class="dtx-stayed">Stayed</td></tr>
+              <tr><td>C13</td><td class="dtx-num">47</td><td class="dtx-num">2</td><td class="dtx-num">21</td><td class="dtx-num">1,350</td><td class="dtx-stayed">Stayed</td></tr>
+              <tr><td>C14</td><td class="dtx-num">52</td><td class="dtx-num">1</td><td class="dtx-num">32</td><td class="dtx-num">1,040</td><td class="dtx-stayed">Stayed</td></tr>
+              <tr><td>C15</td><td class="dtx-num">58</td><td class="dtx-num">2</td><td class="dtx-num">11</td><td class="dtx-num">1,580</td><td class="dtx-stayed">Stayed</td></tr>
+              <tr><td>C16</td><td class="dtx-num">63</td><td class="dtx-num">1</td><td class="dtx-num">24</td><td class="dtx-num">960</td><td class="dtx-stayed">Stayed</td></tr>
+            </tbody>
+          </table>
+          </div>
+        </section>
+        """
+    )
 
 
 def _render_confusion_problem() -> None:
