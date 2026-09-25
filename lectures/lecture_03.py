@@ -5,15 +5,20 @@ import copy
 import streamlit as st
 
 TITLE = "Lecture 3"
-SUB_LECTURES = ["Neural Networks"]
+SUB_LECTURES = ["Neural Networks", "Confusion Matrix"]
 TOPICS = {
     "Neural Networks": ["Neural Networks"],
+    "Confusion Matrix": ["Confusion Matrix"],
 }
-PICK_SUB = "Pick Neural Networks to open that section."
+PICK_SUB = "Pick Neural Networks or Confusion Matrix to open that section."
 PICK_TOPIC = "Pick Neural Networks to open that section."
-PICK_TOPIC_BY_SUB = {"Neural Networks": PICK_TOPIC}
+PICK_TOPIC_BY_SUB = {
+    "Neural Networks": PICK_TOPIC,
+    "Confusion Matrix": "Pick Confusion Matrix to open that section.",
+}
 
 TOPIC_NAME = "Neural Networks"
+CONFUSION_TOPIC = "Confusion Matrix"
 
 CANVAS_SIZE = 220
 NEURON_GALLERY_K = 8
@@ -43,6 +48,16 @@ def render(
     )
     with st.container(key="lesson_block", gap=None):
         st.html(header)
+        if topic == CONFUSION_TOPIC:
+            with st.container(key="cm_body"):
+                tab_problem, tab_drag = st.tabs(["Exercise", "Drag the threshold"])
+                with tab_problem:
+                    _render_confusion_problem()
+                with tab_drag:
+                    from services.confusion_matrix import render as render_confusion
+
+                    render_confusion()
+            return
         if topic != TOPIC_NAME:
             return
         with st.container(key="nn_body"):
@@ -58,58 +73,111 @@ def render(
                 _render_draw()
 
 
-def _render_exercise() -> None:
+def _render_confusion_problem() -> None:
     st.html(
         """
-        <section class="nn-exercise-card" aria-labelledby="nn-exercise-title">
-          <div class="nn-exercise-kicker">Exercise</div>
-          <h2 id="nn-exercise-title">Discover what a neuron detects</h2>
-          <div class="nn-exercise-steps">
-            <article class="nn-exercise-step">
-              <div class="nn-exercise-step-head">
-                <span class="nn-exercise-number">1</span>
-                <h3>Study a neuron</h3>
+        <section class="cmx-card" aria-labelledby="cm-problem-title">
+          <div class="cmx-deco" aria-hidden="true"><span class="cmx-dots"></span><span class="cmx-c1"></span><span class="cmx-c2"></span></div>
+          <div class="cmx-kicker">Exercise</div>
+          <h2 id="cm-problem-title">A high score can still hide mistakes</h2>
+          <div class="cmx-steps">
+            <article class="cmx-step">
+              <div class="cmx-head">
+                <span class="cmx-num">1</span>
+                <h3>A rare disease,<br>one threshold</h3>
+                <span class="cmx-icon cmx-icon-people"></span>
               </div>
-              <ul class="nn-exercise-points">
-                <li>Open <strong>Label the neuron</strong> and select any navy neuron
-                cell—the selected cell turns gold.</li>
-                <li>Examine its eight strongest examples. Ignore the letter labels and
-                identify the shared visual pattern, such as a diagonal, loop, curve,
-                or crossbar.</li>
-                <li>Form a hypothesis - “Neuron 02 detects loops.”</li>
+              <ul class="cmx-points">
+                <li>Forty patients. A few are actually sick. A screening test gives each person a risk score from 0 to 1.</li>
+                <li>Anyone at or above the decision threshold is predicted sick. Everyone below it is predicted not sick.</li>
+                <li>Moving that one line changes who is predicted sick and who is predicted not sick.</li>
               </ul>
             </article>
-            <article class="nn-exercise-step">
-              <div class="nn-exercise-step-head">
-                <span class="nn-exercise-number">2</span>
-                <h3>Test your idea</h3>
+            <article class="cmx-step">
+              <div class="cmx-head">
+                <span class="cmx-num">2</span>
+                <h3>Four kinds of result</h3>
+                <span class="cmx-icon cmx-icon-result"></span>
               </div>
-              <ul class="nn-exercise-points">
-                <li>Remember the neuron number and open <strong>Draw a
-                character</strong>.</li>
-                <li>Clearly recreate the common visual pattern you identified.</li>
-                <li>Focus on the pattern rather than copying a particular letter. The
-                activation grid shows how strongly each of the 24 neurons responds.</li>
+              <ul class="cmx-points">
+                <li><strong>True positive</strong> &mdash; actually sick, and predicted sick.</li>
+                <li><strong>False negative</strong> &mdash; actually sick, but predicted not sick.</li>
+                <li><strong>False positive</strong> &mdash; actually not sick, but predicted sick.</li>
+                <li><strong>True negative</strong> &mdash; actually not sick, and predicted not sick.</li>
               </ul>
             </article>
-            <article class="nn-exercise-step">
-              <div class="nn-exercise-step-head">
-                <span class="nn-exercise-number">3</span>
-                <h3>Check the result</h3>
+            <article class="cmx-step">
+              <div class="cmx-head">
+                <span class="cmx-num">3</span>
+                <h3>Why one percentage<br>is not enough</h3>
+                <span class="cmx-icon cmx-icon-bars"></span>
               </div>
-              <ul class="nn-exercise-points">
-                <li>Find the neuron number you studied in the activation grid.</li>
-                <li>A brighter cell indicates a stronger response; a dark cell
-                indicates a weak or absent response.</li>
-                <li>If your neuron lights up, the result supports your hypothesis. If
-                it remains dark, try a clearer variation before reconsidering what the
-                neuron detects.</li>
+              <ul class="cmx-points">
+                <li><strong>Accuracy</strong> counts every correct box. With few sick patients, predicting the healthy ones as not sick can make accuracy look strong.</li>
+                <li><strong>Precision</strong> asks: of everyone predicted sick, how many are actually sick?</li>
+                <li><strong>Recall</strong> asks: of everyone actually sick, how many were predicted sick?</li>
               </ul>
             </article>
           </div>
-          <div class="nn-exercise-reminder">
-            <strong>Remember</strong> - Note the neuron number before switching tabs. It
-            will not be highlighted automatically in the activation grid.
+          <div class="cmx-next">
+            <span class="cmx-arrow"></span>
+            <span class="cmx-sep"></span>
+            <span><strong>Next</strong> &mdash; Open <strong>Drag the threshold.</strong> Drag the gold line and watch those four boxes change.</span>
+          </div>
+        </section>
+        """
+    )
+
+
+def _render_exercise() -> None:
+    st.html(
+        """
+        <section class="cmx-card" aria-labelledby="nn-exercise-title">
+          <div class="cmx-deco" aria-hidden="true"><span class="cmx-dots"></span><span class="cmx-c1"></span><span class="cmx-c2"></span></div>
+          <div class="cmx-kicker">Exercise</div>
+          <h2 id="nn-exercise-title">Discover what a neuron detects</h2>
+          <div class="cmx-steps">
+            <article class="cmx-step">
+              <div class="cmx-head">
+                <span class="cmx-num">1</span>
+                <h3>Study a neuron</h3>
+                <span class="cmx-icon cmx-icon-neurons"></span>
+              </div>
+              <ul class="cmx-points">
+                <li>Open <strong>Label the neuron</strong> and select any navy neuron &mdash; the selected neuron turns gold.</li>
+                <li>Examine its eight strongest examples. Ignore the letter labels and identify the shared visual pattern, such as a diagonal, loop, curve, or crossbar.</li>
+                <li>Form a hypothesis &mdash; &ldquo;Neuron 02 detects loops.&rdquo;</li>
+              </ul>
+            </article>
+            <article class="cmx-step">
+              <div class="cmx-head">
+                <span class="cmx-num">2</span>
+                <h3>Test your idea</h3>
+                <span class="cmx-icon cmx-icon-pen"></span>
+              </div>
+              <ul class="cmx-points">
+                <li>Remember the neuron number and open <strong>Draw a character</strong>.</li>
+                <li>Clearly recreate the common visual pattern you identified.</li>
+                <li>Focus on the pattern rather than copying a particular letter. The activation grid shows how strongly each of the 24 neurons responds.</li>
+              </ul>
+            </article>
+            <article class="cmx-step">
+              <div class="cmx-head">
+                <span class="cmx-num">3</span>
+                <h3>Check the result</h3>
+                <span class="cmx-icon cmx-icon-activation"></span>
+              </div>
+              <ul class="cmx-points">
+                <li>Find the neuron number you studied in the activation grid.</li>
+                <li>A <strong>brighter</strong> neuron indicates a stronger response; a <strong>dark</strong> neuron indicates a weak or absent response.</li>
+                <li>If your neuron lights up, the result supports your hypothesis. If it remains dark, try a clearer variation before reconsidering what the neuron detects.</li>
+              </ul>
+            </article>
+          </div>
+          <div class="cmx-next">
+            <span class="cmx-arrow"></span>
+            <span class="cmx-sep"></span>
+            <span><strong>Remember</strong> &mdash; Note the neuron number before switching tabs. It will not be highlighted automatically in the activation grid.</span>
           </div>
         </section>
         """
