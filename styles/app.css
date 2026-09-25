@@ -690,7 +690,8 @@ iframe[height="0"] {
 
 /* ---------- Model chat ---------- */
 .st-key-nn_body,
-.st-key-cm_body {
+.st-key-cm_body,
+.st-key-dtx_body {
   flex: 1 1 auto !important;
   width: calc(100% - 56px) !important;
   min-height: 0 !important;
@@ -698,6 +699,195 @@ iframe[height="0"] {
   padding: 0 !important;
   box-sizing: border-box !important;
   overflow: auto !important;
+}
+
+.dtx-lead,
+.dtx-ask,
+.dtx-verdict,
+.dtx-why {
+  margin: 0;
+  color: #445066;
+  font-size: 0.92rem;
+  line-height: 1.55;
+}
+
+.dtx-lead {
+  max-width: 680px;
+  margin-bottom: 16px;
+}
+
+.dtx-lead.dtx-oneline {
+  max-width: none;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.dtx-lead b {
+  color: var(--navy);
+  font-weight: 800;
+}
+
+.st-key-dtx_body {
+  overflow: hidden !important;
+}
+
+.cmx-card.dtx-card {
+  margin-top: 12px;
+  margin-bottom: 0;
+}
+
+.dtx-scroll {
+  max-height: calc(100vh - 400px);
+  min-height: 160px;
+  overflow-y: auto;
+  border: 1px solid #e3e8f0;
+  border-radius: 10px;
+}
+
+.dtx-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: #ffffff;
+}
+
+.dtx-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  color: var(--navy);
+  font-size: 0.9rem;
+}
+
+.dtx-table th {
+  padding: 8px 10px;
+  border-bottom: 1.5px solid #0b1f3a;
+  font-size: 0.74rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-align: center;
+  text-transform: uppercase;
+}
+
+.dtx-table td {
+  padding: 7px 10px;
+  border-bottom: 1px solid #e8edf4;
+  text-align: center;
+}
+
+.dtx-num {
+  font-variant-numeric: tabular-nums;
+}
+
+.dtx-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.dtx-churned {
+  color: #b91c1c;
+  font-weight: 700;
+}
+
+.dtx-stayed {
+  color: #1b7a47;
+  font-weight: 700;
+}
+
+.dtx-ask {
+  margin: 16px 0 12px;
+  color: var(--navy);
+}
+
+.dtx-ask strong {
+  color: var(--navy);
+}
+
+.dtx-parent,
+.dtx-chosen {
+  padding: 14px 16px;
+  background: #f7f9fc;
+  border: 1px solid #e3e8f0;
+  border-radius: 14px;
+}
+
+.dtx-parent b,
+.dtx-chosen b,
+.dtx-group b {
+  display: block;
+  margin-bottom: 8px;
+  color: var(--navy);
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.dtx-faces {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.dtx-face {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+}
+
+.dtx-churn {
+  background: #b91c1c;
+}
+
+.dtx-stay {
+  background: #1b7a47;
+}
+
+.dtx-entropy {
+  display: block;
+  margin-top: 10px;
+  color: var(--navy);
+  font-size: 0.95rem;
+  font-weight: 800;
+}
+
+.dtx-why {
+  display: block;
+  margin-top: 4px;
+}
+
+.dtx-split {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.dtx-group {
+  padding: 8px;
+  background: #f7f9fc;
+  border-radius: 10px;
+}
+
+.dtx-parent .dtx-group,
+.dtx-chosen .dtx-group {
+  background: #ffffff;
+}
+
+.dtx-count {
+  display: block;
+  margin-top: 6px;
+  color: #445066;
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.dtx-verdict {
+  margin-top: 10px;
+  font-size: 0.84rem;
+}
+
+.dtx-chosen {
+  margin-top: 14px;
 }
 
 .cm-story {
@@ -728,7 +918,11 @@ iframe[height="0"] {
 .st-key-cm_score [data-testid="stCustomComponentV1"],
 .st-key-cm_score [data-testid="stIFrame"],
 .st-key-cm_score iframe,
-.st-key-cm_score iframe[height="0"] {
+.st-key-cm_score iframe[height="0"],
+.st-key-dt_practical [data-testid="stIFrame"],
+.st-key-dt_practical iframe,
+.st-key-dt_intuition [data-testid="stIFrame"],
+.st-key-dt_intuition iframe {
   pointer-events: auto !important;
   position: relative !important;
   left: auto !important;
@@ -746,8 +940,15 @@ iframe[height="0"] {
   background: transparent !important;
 }
 
+.st-key-dt_intuition [data-testid="stIFrame"],
+.st-key-dt_intuition iframe {
+  height: 560px !important;
+  min-height: 0 !important;
+}
+
 .st-key-cm_score [data-testid="stElementContainer"]:has(iframe),
-.st-key-cm_score [data-testid="stElementContainer"]:has([data-testid="stCustomComponentV1"]) {
+.st-key-cm_score [data-testid="stElementContainer"]:has([data-testid="stCustomComponentV1"]),
+.st-key-dt_practical [data-testid="stElementContainer"]:has(iframe) {
   height: auto !important;
   min-height: 560px !important;
   overflow: visible !important;
@@ -1433,7 +1634,8 @@ iframe[height="0"] {
 
 @media (max-width: 900px) {
   .st-key-nn_body,
-  .st-key-cm_body {
+  .st-key-cm_body,
+  .st-key-dtx_body {
     width: calc(100% - 36px) !important;
     margin: 0 18px 22px !important;
   }
