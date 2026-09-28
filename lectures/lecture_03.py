@@ -5,23 +5,28 @@ import copy
 import streamlit as st
 
 TITLE = "Lecture 3"
-SUB_LECTURES = ["Neural Networks", "Confusion Matrix", "Decision Tree"]
+SUB_LECTURES = ["Neural Networks", "Confusion Matrix", "Decision Tree", "Words to Vectors"]
 TOPICS = {
     "Neural Networks": ["Neural Networks"],
     "Confusion Matrix": ["Confusion Matrix"],
     "Decision Tree": ["Decision Tree"],
+    "Words to Vectors": ["Bag of Words"],
 }
-PICK_SUB = "Pick Neural Networks, Confusion Matrix, or Decision Tree to open that section."
+PICK_SUB = "Pick Neural Networks, Confusion Matrix, Decision Tree, or Words to Vectors to open that section."
 PICK_TOPIC = "Pick Neural Networks to open that section."
 PICK_TOPIC_BY_SUB = {
     "Neural Networks": PICK_TOPIC,
     "Confusion Matrix": "Pick Confusion Matrix to open that section.",
     "Decision Tree": "Pick Decision Tree to open that section.",
+    "Words to Vectors": "Pick Bag of Words to open that section.",
 }
 
 TOPIC_NAME = "Neural Networks"
 CONFUSION_TOPIC = "Confusion Matrix"
 TREE_TOPIC = "Decision Tree"
+BOW_TOPIC = "Bag of Words"
+WORD2VEC_COLAB = "https://colab.research.google.com/drive/1TveiLA0DLXDiq-MZZSHX9xwC1kJCBLm7?usp=sharing"
+WORD_LAB_URL = "https://embedding-lab-7yduhyt8ixtatf2xgvxemy.streamlit.app/"
 
 CANVAS_SIZE = 220
 NEURON_GALLERY_K = 8
@@ -75,6 +80,16 @@ def render(
 
                     render_tree()
             return
+        if topic == BOW_TOPIC:
+            with st.container(key="bow_body"):
+                tab_what, tab_exercise, tab_lab = st.tabs(["What is Word2Vec", "Exercise 1", "Exercise 2"])
+                with tab_what:
+                    _render_word2vec_intro()
+                with tab_exercise:
+                    _render_word2vec_exercise()
+                with tab_lab:
+                    _render_word_lab()
+            return
         if topic != TOPIC_NAME:
             return
         with st.container(key="nn_body"):
@@ -123,6 +138,170 @@ def _render_decision_tree() -> None:
             </tbody>
           </table>
           </div>
+        </section>
+        """
+    )
+
+
+def _render_word2vec_intro() -> None:
+    from services.word2vec import render_intro
+
+    render_intro()
+
+
+def _render_word2vec_exercise() -> None:
+    st.html(
+        f"""
+        <section class="cmx-card dtx-card w2x" aria-labelledby="w2v-ex-title">
+          <div class="cmx-deco" aria-hidden="true"><span class="cmx-dots"></span><span class="cmx-c1"></span><span class="cmx-c2"></span></div>
+          <div class="cmx-kicker">Exercise 1</div>
+          <h2 id="w2v-ex-title">Train your own Word2Vec</h2>
+          <p class="dtx-lead">In this exercise you run the whole Word2Vec pipeline from the lesson yourself &ndash; on a real
+          book of your choice. You clean the text, train a <b>CBOW</b> model on it, and then explore a map of the word
+          vectors it learns.</p>
+          <div class="w2x-note"><b>Before you start</b> &ndash; the notebook runs in <b>Google Colab</b> on your own Google
+          account. Sign in, then choose <b>File &rarr; Save a copy in Drive</b> so you work on your own copy. Run the cells
+          from top to bottom.</div>
+
+          <h3>What you will do</h3>
+          <ol class="w2x-steps">
+            <li><b class="t">Install and import the libraries</b>
+            <code>gensim</code> trains the model, <code>nltk</code> supplies the stop-word list, <code>scikit-learn</code>
+            squeezes each vector down to two numbers for the map, and <code>plotly</code> draws the map.</li>
+            <li><b class="t">Choose the text</b>
+            Open <a href="https://www.gutenberg.org/" target="_blank" rel="noopener">Project Gutenberg</a>, pick any book,
+            click <b>Other formats &amp; older devices</b>, open <b>Plain Text</b> and copy the address ending in
+            <code>.txt</code>. Paste it when the notebook asks. No book in mind? Use <i>The Return of Sherlock Holmes</i> &ndash;
+            <code>https://www.gutenberg.org/cache/epub/108/pg108.txt</code>. The notebook keeps only the story, drops the
+            licence text around it, and shows you the opening, the ending and the word count.</li>
+            <li><b class="t">Prepare the text for CBOW</b>
+            Every line is lowercased, punctuation and numbers are removed, <b>stop words</b> such as <i>the</i>, <i>was</i>
+            and <i>and</i> are dropped, and very short words are left out. Each line becomes a list of words &ndash;
+            these are the sentences CBOW reads.</li>
+            <li><b class="t">Train CBOW</b>
+            Pick the four settings from the menus and press <b>Train CBOW</b>. The model is trained with <code>sg=0</code>,
+            which means CBOW.
+              <table class="w2x-set">
+                <thead><tr><th>Setting</th><th>What it controls</th><th>Choices</th><th>Default</th></tr></thead>
+                <tbody>
+                  <tr><td>Vector size</td><td>how many numbers each word gets</td><td>10, 25, 50, 100, 200</td><td>50</td></tr>
+                  <tr><td>Window</td><td>how many words on each side count as context</td><td>2, 3, 5, 7, 10</td><td>5</td></tr>
+                  <tr><td>Min count</td><td>a word seen fewer times than this is left out</td><td>1, 2, 5, 10, 20</td><td>5</td></tr>
+                  <tr><td>Epochs</td><td>how many times CBOW reads the whole book</td><td>5 to 200</td><td>10</td></tr>
+                </tbody>
+              </table>
+            </li>
+            <li><b class="t">See the words</b>
+            The most common words are taken, each vector is scaled to length 1 so only its <b>direction</b> counts, and
+            <b>t-SNE</b> turns each vector into two numbers &ndash; one point per word on a flat map. Hover over a point
+            to read its word.</li>
+          </ol>
+
+          <h3>What to look for</h3>
+          <ul class="w2x-list">
+            <li>Small groups of related words &ndash; names of characters, places, words about time, words about speech
+            such as <i>said</i>, <i>asked</i> and <i>replied</i>.</li>
+            <li>For each group, ask what the words have in common. CBOW only saw which words were near each other &ndash;
+            nobody told it what any word means.</li>
+            <li>Some groups are about meaning, and some only reflect how this particular author writes.</li>
+          </ul>
+
+          <h3>Read the map carefully</h3>
+          <ul class="w2x-list">
+            <li>A gap between two groups is <b>not a real distance</b>. t-SNE keeps close neighbours close, but stretches
+            and squeezes everything else.</li>
+            <li>Run it again and the layout can rotate or flip. The neighbours stay similar, the positions do not mean anything.</li>
+            <li>The model learned from <b>one book</b>. With so little text, some neighbours are accidents of the story.</li>
+          </ul>
+
+          <h3>Try this</h3>
+          <ul class="w2x-list">
+            <li>Change the <b>Window</b> or the <b>Epochs</b>, train again and redraw. Do the same words stay together?</li>
+            <li>Try a very small <b>Vector size</b> such as 10, then a large one such as 200. Which map has cleaner groups?</li>
+            <li>Load a different book. Does <i>said</i> land near the same words in both books?</li>
+          </ul>
+
+          <a class="w2v-link" href="{WORD2VEC_COLAB}" target="_blank" rel="noopener">Open the Colab notebook</a>
+        </section>
+        """
+    )
+
+
+def _render_word_lab() -> None:
+    st.html(
+        f"""
+        <section class="cmx-card dtx-card w2x" aria-labelledby="w2v-lab-title">
+          <div class="cmx-deco" aria-hidden="true"><span class="cmx-dots"></span><span class="cmx-c1"></span><span class="cmx-c2"></span></div>
+          <div class="cmx-kicker">Exercise 2</div>
+          <h2 id="w2v-lab-title">Do arithmetic with word vectors</h2>
+          <p class="dtx-lead">In Exercise 1 your vectors came from one book. Here you use vectors that were learned from
+          a <b>huge amount of text</b> &ndash; all of Wikipedia plus years of news articles. With that much text, the
+          patterns from the lesson become strong enough to test yourself &ndash; nearest neighbours, cosine similarity and
+          the famous <b>king &minus; man + woman</b>.</p>
+          <p class="dtx-lead">The vectors come from <b>GloVe</b>, a close cousin of Word2Vec that also learns from which
+          words occur together. It has <b>400,000 words</b>, and every word is a vector of <b>300 numbers</b>.</p>
+
+          <h3>Step 1 &ndash; Make your guesses</h3>
+          <p class="dtx-lead">Remember how the lesson solved <b>king &minus; man + woman</b> &ndash; king is roughly
+          man + royal, so removing man leaves the <i>royal</i> part, and adding woman lands near <b>queen</b>.
+          Solve the expressions below the same way, <b>before</b> you open the lab. For each one, ask yourself &ndash;</p>
+          <div class="w2x-note w2x-ask">
+          <ul class="w2x-list">
+            <li>what meaning does the first word carry?</li>
+            <li>what part does the subtracted word remove, and what is left?</li>
+            <li>what does the added word bring in &ndash; and which word do you expect to land on?</li>
+          </ul>
+          </div>
+          <div class="w2x-caps">
+            <span class="cap"><i>1</i>(cats <em>&minus;</em> cat) <em>+</em> dog</span>
+            <span class="cap"><i>2</i>(cricket <em>&minus;</em> india) <em>+</em> brazil</span>
+            <span class="cap"><i>3</i>(sushi <em>&minus;</em> japan) <em>+</em> italy</span>
+            <span class="cap"><i>4</i>(sanskrit <em>&minus;</em> india) <em>+</em> rome</span>
+            <span class="cap"><i>5</i>(death <em>&minus;</em> care) <em>+</em> money</span>
+            <span class="cap"><i>6</i>(teacher <em>&minus;</em> school) <em>+</em> hospital</span>
+            <span class="cap"><i>7</i>(xbox <em>&minus;</em> microsoft) <em>+</em> sony</span>
+            <span class="cap"><i>8</i>(gandhi <em>&minus;</em> india) <em>+</em> germany</span>
+            <span class="cap"><i>9</i>(atom <em>&minus;</em> physics) <em>+</em> biology</span>
+            <span class="cap"><i>10</i>(sand <em>&minus;</em> desert) <em>+</em> polar</span>
+          </div>
+          <p class="dtx-lead">Write down your guess for each one.</p>
+
+          <h3>Step 2 &ndash; Check your guesses in the lab</h3>
+          <div class="w2x-note"><b>Before you open the lab</b> &ndash; it opens in a new tab and needs no sign-in. The app
+          is called <b>Embedding Lab</b> &ndash; <i>embedding</i> is simply another name for a word vector. If the app has
+          been asleep, it takes a minute to wake up. Press <b>Load Model</b> and wait for the progress bar &ndash; loading
+          the vectors takes another minute.</div>
+          <p class="dtx-lead">The lab works in three stages, shown at the top of the app &ndash;
+          <b>Build expression &rarr; Compute &rarr; Discover</b>.</p>
+          <ol class="w2x-steps">
+            <li><b class="t">Build expression</b>
+            Type a word in <b>Term</b> and press <b>+ Add</b> or <b>&minus; Sub</b>. Added words appear as green chips,
+            subtracted words as red chips. Click a chip to remove it, or press <b>Clear</b> to start again. For
+            <b>(cats &minus; cat) + dog</b> &ndash; type <i>cats</i> and press + Add, type <i>cat</i> and press &minus; Sub,
+            type <i>dog</i> and press + Add. The lab writes it back to you as <i>(cats - cat) + dog</i>.</li>
+            <li><b class="t">Compute</b>
+            Press <b>Compute</b>. The lab adds and subtracts the vectors of your words, exactly like the analogy in the
+            lesson, and finds the <b>5 closest words</b> to the result using <b>cosine similarity</b>. The words you typed
+            are left out, so you only see new words.</li>
+            <li><b class="t">Discover</b>
+            The <b>Closest Words</b> panel lists the 5 words with their similarity scores. Compare the top 3 with your
+            guess. The <b>Vector Space Visualization</b> first shows each added and subtracted word as a green or red arrow,
+            and after Compute it shows the result with its closest words. It squeezes 300 numbers into 3, so trust the
+            <b>scores</b> more than the distances you see.</li>
+          </ol>
+          <p class="dtx-lead">Every computed expression is kept in <b>Experiment History</b>, so you can press
+          <b>Restore</b> to go back to an earlier one. Under each closest word, <b>Add</b>, <b>Subtract</b> and
+          <b>Start Fresh</b> let you keep exploring from it. Your professor will go through the answers in class.</p>
+
+          <h3>Tips</h3>
+          <ul class="w2x-list">
+            <li>Type single words. Capital letters are fine, but numbers are not allowed.</li>
+            <li>If a word is <b>not in vocabulary</b>, try a more common spelling or a different word.</li>
+            <li>If the lab says <b>Expression unchanged</b>, you already computed that expression &ndash; add or remove a
+            word first.</li>
+          </ul>
+
+          <a class="w2v-link" href="{WORD_LAB_URL}" target="_blank" rel="noopener">Open the lab</a>
         </section>
         """
     )
