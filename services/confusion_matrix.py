@@ -44,7 +44,7 @@ _PAGE = r"""<!doctype html>
   #matrix { flex: 1 1 0; min-height: 0; width: 100%; height: 0; }
   .mface { transition: transform .6s cubic-bezier(.2,.8,.2,1), opacity .35s ease; }
   svg text { font-family: "Inter", sans-serif; }
-  svg text.glyph { font-family: "Segoe UI Symbol", "Arial Unicode MS", "DejaVu Sans", sans-serif; }
+  svg text.glyph { font-family: "Inter", sans-serif; }
   .strip { cursor: ew-resize; touch-action: none; user-select: none; }
   .cellbox, .spot { transition: all .5s cubic-bezier(.2,.8,.2,1); }
   .layout { display: grid; grid-template-columns: minmax(0, 1fr) max-content; grid-template-rows: 100%; gap: 28px; height: 100%; }
