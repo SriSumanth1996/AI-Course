@@ -10,7 +10,7 @@ TOPICS = {
     "Neural Networks": ["Neural Networks"],
     "Confusion Matrix": ["Confusion Matrix"],
     "Decision Tree": ["Decision Tree"],
-    "Words to Vectors": ["Bag of Words"],
+    "Words to Vectors": ["Bag of Words", "Sentence Embeddings"],
 }
 PICK_SUB = "Pick Neural Networks, Confusion Matrix, Decision Tree, or Words to Vectors to open that section."
 PICK_TOPIC = "Pick Neural Networks to open that section."
@@ -18,13 +18,14 @@ PICK_TOPIC_BY_SUB = {
     "Neural Networks": PICK_TOPIC,
     "Confusion Matrix": "Pick Confusion Matrix to open that section.",
     "Decision Tree": "Pick Decision Tree to open that section.",
-    "Words to Vectors": "Pick Bag of Words to open that section.",
+    "Words to Vectors": "Pick Bag of Words or Sentence Embeddings to open that section.",
 }
 
 TOPIC_NAME = "Neural Networks"
 CONFUSION_TOPIC = "Confusion Matrix"
 TREE_TOPIC = "Decision Tree"
 BOW_TOPIC = "Bag of Words"
+SE_TOPIC = "Sentence Embeddings"
 WORD2VEC_COLAB = "https://colab.research.google.com/drive/1TveiLA0DLXDiq-MZZSHX9xwC1kJCBLm7?usp=sharing"
 WORD_LAB_URL = "https://embedding-lab-7yduhyt8ixtatf2xgvxemy.streamlit.app/"
 
@@ -82,13 +83,37 @@ def render(
             return
         if topic == BOW_TOPIC:
             with st.container(key="bow_body"):
-                tab_what, tab_exercise, tab_lab = st.tabs(["What is Word2Vec", "Exercise 1", "Exercise 2"])
+                tab_bow, tab_what, tab_exercise, tab_lab, tab_attention = st.tabs(
+                    ["What is Bag of Words", "What is Word2Vec", "Exercise 1", "Exercise 2", "Attention"]
+                )
+                from services import attention, bag_of_words
+
+                with tab_bow:
+                    bag_of_words.render()
                 with tab_what:
                     _render_word2vec_intro()
                 with tab_exercise:
                     _render_word2vec_exercise()
                 with tab_lab:
                     _render_word_lab()
+                with tab_attention:
+                    attention.render()
+            return
+        if topic == SE_TOPIC:
+            from services import sentence_embeddings as se
+
+            with st.container(key="se_body"):
+                tab_why, tab_ex, tab_space, tab_search = st.tabs(
+                    ["From words to sentences", "Exercise", "Sentence space", "Semantic search"]
+                )
+                with tab_why:
+                    se.render_why()
+                with tab_ex:
+                    se.render_exercise()
+                with tab_space:
+                    se.render_space()
+                with tab_search:
+                    se.render_search()
             return
         if topic != TOPIC_NAME:
             return
@@ -222,6 +247,8 @@ def _render_word2vec_exercise() -> None:
           </ul>
 
           <a class="w2v-link" href="{WORD2VEC_COLAB}" target="_blank" rel="noopener">Open the Colab notebook</a>
+          <div class="w2x-note w2x-next"><b>Next</b> &ndash; open <b>Exercise 2</b> to do arithmetic with word vectors
+          learned from far more text.</div>
         </section>
         """
     )
@@ -302,6 +329,8 @@ def _render_word_lab() -> None:
           </ul>
 
           <a class="w2v-link" href="{WORD_LAB_URL}" target="_blank" rel="noopener">Open the lab</a>
+          <div class="w2x-note w2x-next"><b>Next</b> &ndash; when you are done, open <b>Attention</b> to see what word
+          vectors still cannot do, and how attention fixes it.</div>
         </section>
         """
     )
