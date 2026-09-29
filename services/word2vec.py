@@ -367,7 +367,9 @@ def _intro_html() -> str:
   <h2 class="w2v-title">Word2Vec &ndash; Learning Meaning from Context</h2>
 
   <p>A computer initially sees words only as symbols. The words {_chip("king", "plain")} {_chip("queen", "plain")}
-  {_chip("river", "plain")} and {_chip("bank", "plain")} do not automatically carry any notion of meaning or similarity.</p>
+  {_chip("river", "plain")} and {_chip("bank", "plain")} do not automatically carry any notion of meaning or similarity.
+  Bag of Words, in the first tab, only counts them &ndash; to it, <i>king</i> and <i>queen</i> are as unrelated as
+  <i>king</i> and <i>river</i>.</p>
   <p>Word2Vec gives every word a <b>vector</b> &ndash; simply a list of numbers, one list per word. It learns those
   numbers by looking at <b>which words tend to occur around each word</b>.</p>
   <blockquote>Words that occur in similar contexts tend to acquire similar vector representations.</blockquote>
@@ -458,8 +460,15 @@ def _intro_html() -> str:
     Only four words of the vocabulary are shown &ndash; the real comparison runs over all of them.</div>
   </div>
   <p>An average does not care about the order of the words &ndash; <i>the strange carefully</i> and <i>carefully the strange</i>
-  give the same average. The context is treated as a <b>bag of words</b>, which is where the name
-  <b>Continuous Bag of Words</b> comes from.</p>
+  give the same average.</p>
+  <div class="w2v-note"><b>Why is it called Continuous Bag of Words?</b><br>
+  <b>Bag of Words</b> &ndash; the context words are treated like words thrown into a bag. Their order is ignored, just
+  as in the Bag of Words method from the first tab.<br>
+  <b>Continuous</b> &ndash; instead of whole-number counts, every word is a vector of real numbers such as 0.42 or
+  &minus;0.17, and those numbers can change smoothly as the model learns.<br>
+  <b>Not the same method</b> &ndash; Bag of Words only counts words and learns nothing, giving one row of counts per
+  sentence. CBOW is one of the two ways to train Word2Vec &ndash; it borrows only the idea that order is ignored, and it
+  learns one vector for every word.</div>
   <p>If letter does not get the highest score, the model measures the <b>error</b> and adjusts the vectors involved slightly,
   using <b>gradient descent</b> &ndash; the same idea used to train neural networks. This happens again and again across the text &ndash;</p>
   <div class="w2v-fig">
@@ -670,14 +679,8 @@ def _intro_html() -> str:
     <span class="ps final">Learned word vectors</span>
   </div>
 
-  <h3>Where Word2Vec stands today</h3>
-  <p>Word2Vec gives every word <b>exactly one vector</b>. Remember {_chip("bank", "plain")} from the start &ndash; it gets the same
-  vector in <i>the river bank</i> and in <i>the bank approved the loan</i>, even though the meanings differ.</p>
-  <p>Modern <b>transformer</b> models, the technology behind tools like ChatGPT, fix this. They give a word a
-  <b>different vector in every sentence</b>, depending on the words around it, and they have replaced fixed word vectors
-  for most tasks. So Word2Vec is <b>foundational intuition, not today's state of the art</b>.</p>
-  <p>But the core idea is the same &ndash; learn vectors by <b>predicting words from their context</b>. Word2Vec is still the
-  cleanest way to see how meaning can emerge from a prediction task, and the bridge to modern language models.</p>
+  <div class="w2v-note"><b>Next</b> &ndash; open <b>Exercise 1</b> and train your own CBOW model on a book of your
+  choice.</div>
 </div>
 """
 
