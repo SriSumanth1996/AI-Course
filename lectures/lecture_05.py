@@ -44,8 +44,18 @@ from services.openai_controls import (
 openai_stream_words = openai_stream_tokens
 
 TITLE = "Lecture 5"
-SUB_LECTURES = ["Tokenisation", "Input context", "Post Training"]
+SUB_LECTURES = [
+    "Tokenisation",
+    "Inside the Transformer",
+    "Input context",
+    "Post Training",
+]
 TOPICS = {
+    "Tokenisation": ["Tokenisation"],
+    "Inside the Transformer": [
+        "Query, Key and Value",
+        "Encoder–Decoder",
+    ],
     "Input context": [
         "Marketing ad agency",
         "Code generation",
@@ -57,18 +67,26 @@ TOPICS = {
     ],
 }
 PICK_SUB = (
-    "Pick Tokenisation, Input context, or Post Training to open that section."
+    "Pick Tokenisation, Inside the Transformer, Input context, or Post Training "
+    "to open that section."
 )
 PICK_TOPIC = (
     "Pick Base Model, Fine-tuned Model, or RLHF-aligned Model to open that section."
 )
 PICK_TOPIC_BY_SUB = {
+    "Tokenisation": "Pick Tokenisation to open that section.",
+    "Inside the Transformer": (
+        "Pick Query, Key and Value or Encoder–Decoder to open that section."
+    ),
     "Input context": (
         "Pick Marketing ad agency or Code generation to open that case."
     ),
     "Post Training": PICK_TOPIC,
 }
 
+TOKENISATION_TOPIC = "Tokenisation"
+QKV_TOPIC = "Query, Key and Value"
+ENCDEC_TOPIC = "Encoder–Decoder"
 ASSETS = Path(__file__).resolve().parent.parent / "assets"
 
 RLHF_CATALOG = {
@@ -2485,6 +2503,30 @@ def render(
         f"{crumbs}"
         "</div>"
     )
+    if topic == TOKENISATION_TOPIC:
+        from services import tokenisation
+
+        with st.container(key="lesson_block", gap=None):
+            st.html(header_html)
+            with st.container(key="tok_body"):
+                tokenisation.render()
+        return
+    if topic == QKV_TOPIC:
+        from services import qkv
+
+        with st.container(key="lesson_block", gap=None):
+            st.html(header_html)
+            with st.container(key="qkv_body"):
+                qkv.render()
+        return
+    if topic == ENCDEC_TOPIC:
+        from services import encoder_decoder
+
+        with st.container(key="lesson_block", gap=None):
+            st.html(header_html)
+            with st.container(key="encdec_body"):
+                encoder_decoder.render()
+        return
     if is_rlhf:
         recover_rlhf_lock()
         ensure_rlhf_company()
