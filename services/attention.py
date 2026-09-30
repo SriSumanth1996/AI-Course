@@ -85,7 +85,12 @@ def _bars(words: list[str], weights: dict[int, float]) -> str:
     )
 
 
-def _live(words: list[str], word_att: np.ndarray) -> tuple[str, str] | None:
+def _live(
+    words: list[str],
+    word_att: np.ndarray,
+    *,
+    scope: str = "",
+) -> tuple[str, str] | None:
     active = [j for j, w in enumerate(words) if not _is_punct(w) and w.lower() not in SMALL]
     if len(active) < 2:
         return None
@@ -100,11 +105,12 @@ def _live(words: list[str], word_att: np.ndarray) -> tuple[str, str] | None:
         total = sum(raw.values()) or 1.0
         weights[i] = {j: v / total for j, v in raw.items()}
 
+    host = f".{scope}.att-live" if scope else ".att-live"
     rules = []
     for i in active:
-        prefixes = [f".att-live:has(.hw{i}:hover)"]
+        prefixes = [f"{host}:has(.hw{i}:hover)"]
         if i == default:
-            prefixes.append(".att-live:not(:has(.hw:hover))")
+            prefixes.append(f"{host}:not(:has(.hw:hover))")
 
         def rule(suffix: str, body: str) -> None:
             rules.append(", ".join(p + suffix for p in prefixes) + " { " + body + " }")
@@ -141,9 +147,10 @@ def _live(words: list[str], word_att: np.ndarray) -> tuple[str, str] | None:
         f'<div class="att-rows">{_bars(words, weights[i])}</div></div>'
         for i in active
     )
+    cls = f"att-live {scope}" if scope else "att-live"
     return (
         f"<style>{' '.join(rules)}</style>",
-        f'<div class="att-live"><div class="att-words">{" ".join(parts)}</div>{panels}</div>',
+        f'<div class="{cls}"><div class="att-words">{" ".join(parts)}</div>{panels}</div>',
     )
 
 
