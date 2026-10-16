@@ -1,6 +1,6 @@
 (function () {
-          if (window.__lectureChrome === 53) return;
-          window.__lectureChrome = 53;
+          if (window.__lectureChrome === 54) return;
+          window.__lectureChrome = 54;
           window.__crumbForward = true;
           window.__rlhfForward = true;
 
@@ -178,7 +178,8 @@
             el.style.setProperty("height", "auto", "important");
             var next = el.value ? Math.min(Math.max(el.scrollHeight, 22), 88) : 22;
             el.style.setProperty("height", next + "px", "important");
-            el.style.setProperty("overflow-y", next >= 88 ? "auto" : "hidden", "important");
+            el.style.setProperty("overflow-y", next >= 88 ? "scroll" : "hidden", "important");
+            el.dataset.fitValue = el.value || "";
             if (next < 88) el.scrollTop = 0;
             requestAnimationFrame(function () {
               el.dataset.fitting = "0";
@@ -186,15 +187,19 @@
           }
 
           function wireChatInput(el) {
-            if (el.dataset.chatFit === "1") return;
-            el.dataset.chatFit = "1";
-            ["input", "keyup", "keydown", "change", "paste"].forEach(function (type) {
-              el.addEventListener(type, function () {
-                fitChatInput(el);
-                requestAnimationFrame(function () { fitChatInput(el); });
+            if (el.dataset.chatFit !== "1") {
+              el.dataset.chatFit = "1";
+              ["input", "keyup", "keydown", "change", "paste"].forEach(function (type) {
+                el.addEventListener(type, function () {
+                  fitChatInput(el);
+                  requestAnimationFrame(function () { fitChatInput(el); });
+                });
               });
-            });
-            fitChatInput(el);
+            }
+            if ((el.value || "") !== (el.dataset.fitValue || "")) {
+              fitChatInput(el);
+              requestAnimationFrame(function () { fitChatInput(el); });
+            }
           }
 
           function pinThread(el) {
@@ -538,6 +543,30 @@
               clickHidden("rlhf_co_" + companyOpt.getAttribute("data-rlhf-company"));
               return;
             }
+            var rlhfReason = e.target.closest("[data-rlhf-reason]");
+            if (rlhfReason) {
+              e.preventDefault();
+              clickHidden("rlhf_reason_" + rlhfReason.getAttribute("data-rlhf-reason"));
+              return;
+            }
+            var llamaReason = e.target.closest("[data-llama-reason]");
+            if (llamaReason) {
+              e.preventDefault();
+              clickHidden("llama_reason_" + llamaScope() + "_" + llamaReason.getAttribute("data-llama-reason"));
+              return;
+            }
+            var rlhfApiOpt = e.target.closest("[data-rlhf-api]");
+            if (rlhfApiOpt) {
+              e.preventDefault();
+              clickHidden("rlhf_api_" + rlhfApiOpt.getAttribute("data-rlhf-api"));
+              return;
+            }
+            var llamaApiOpt = e.target.closest("[data-llama-api]");
+            if (llamaApiOpt) {
+              e.preventDefault();
+              clickHidden("llama_api_" + llamaScope() + "_" + llamaApiOpt.getAttribute("data-llama-api"));
+              return;
+            }
             var llamaModeOpt = e.target.closest("[data-llama-mode]");
             if (llamaModeOpt) {
               e.preventDefault();
@@ -580,6 +609,7 @@
             var modelOpt = e.target.closest("[data-rlhf-model]");
             if (modelOpt) {
               e.preventDefault();
+              if (modelOpt.classList.contains("is-disabled")) return;
               clickHidden("rlhf_md_" + modelOpt.getAttribute("data-rlhf-model"));
               return;
             }
@@ -761,4 +791,9 @@
 
           scan();
           new MutationObserver(scan).observe(document.body, { childList: true, subtree: true });
+          setInterval(function () {
+            document.querySelectorAll(
+              '[data-testid="stChatInput"] textarea, [data-testid="stChatInputTextArea"]'
+            ).forEach(wireChatInput);
+          }, 200);
         })();
