@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import re
+import sys
 import time
 from base64 import b64encode
 from html import escape
@@ -10,10 +11,16 @@ from pathlib import Path
 import streamlit as st
 
 from services.documents import extract_upload
-from services.huggingface_chat import LLAMA_BASE_MODEL
-from services.huggingface_chat import LLAMA_INSTRUCT_MODEL
-from services.huggingface_chat import chat as llama_chat
-from services.huggingface_chat import stream_tokens as llama_stream_tokens
+# Hugging Face Llama is inactive. Inference Provider credits on that key are
+# exhausted. Base Model and Fine-tuned Model run through OpenAI gpt-4o-mini,
+# with prompts that keep a small pretrained base and Llama 3.1 8B Instruct behavior.
+# Restore the lines below, and the llama_chat / llama_stream_tokens calls
+# further down, to put Hugging Face back.
+# from services.huggingface_chat import LLAMA_BASE_MODEL
+# from services.huggingface_chat import LLAMA_INSTRUCT_MODEL
+# from services.huggingface_chat import chat as llama_chat
+# from services.huggingface_chat import stream_tokens as llama_stream_tokens
+LLAMA_STANDIN_MODEL = "gpt-4o-mini"
 from services.input_context_cases import INPUT_CONTEXT_CASES
 from services.input_context_cases import INPUT_CONTEXT_MODEL
 from services.input_context_cases import INPUT_CONTEXT_MODEL_LABEL
@@ -49,6 +56,7 @@ SUB_LECTURES = [
     "Inside the Transformer",
     "Input context",
     "Post Training",
+    "Prompting",
 ]
 TOPICS = {
     "Tokenisation": ["Tokenisation"],
@@ -65,10 +73,11 @@ TOPICS = {
         "Fine-tuned Model",
         "RLHF-aligned Model",
     ],
+    "Prompting": ["Shop note"],
 }
 PICK_SUB = (
-    "Pick Tokenisation, Inside the Transformer, Input context, or Post Training "
-    "to open that section."
+    "Pick Tokenisation, Inside the Transformer, Input context, Post Training, "
+    "or Prompting to open that section."
 )
 PICK_TOPIC = (
     "Pick Base Model, Fine-tuned Model, or RLHF-aligned Model to open that section."
@@ -82,18 +91,18 @@ PICK_TOPIC_BY_SUB = {
         "Pick Marketing ad agency or Code generation to open that case."
     ),
     "Post Training": PICK_TOPIC,
+    "Prompting": "Pick Shop note to open the three prompting panes.",
 }
 
 TOKENISATION_TOPIC = "Tokenisation"
 QKV_TOPIC = "Query, Key and Value"
 ENCDEC_TOPIC = "Encoder–Decoder"
+PROMPTING_TOPIC = "Shop note"
 ASSETS = Path(__file__).resolve().parent.parent / "assets"
 
 RLHF_CATALOG = {
     "OpenAI": {
-        "GPT-4o Mini": "gpt-4o-mini",
         "GPT-4.1": "gpt-4.1",
-        "GPT-5.2": "gpt-5.2",
         "GPT-5.6 Sol": "gpt-5.6-sol",
     },
     "Anthropic": {
@@ -110,7 +119,7 @@ RLHF_CATALOG = {
 
 DEFAULT_RLHF_COMPANY = "OpenAI"
 DEFAULT_RLHF_MODEL = {
-    "OpenAI": "GPT-4o Mini",
+    "OpenAI": "GPT-4.1",
     "Anthropic": "Claude Sonnet 4.5",
 }
 
@@ -148,6 +157,217 @@ COMPANY_LOGOS = {
 }
 
 LLAMA_TOPICS = {"Base Model", "Fine-tuned Model"}
+REASONING_EXAMPLE = """I'm tired of shopping and want to finish my purchase as cheaply as possible.
+
+I need four products:
+
+- Product A costs ₹1,800.
+- Product B costs ₹1,650.
+- Product C costs ₹950.
+- Product D costs ₹1,150.
+
+The store has the following rules:
+
+1. I can purchase everything together or split the products into any number of separate orders.
+2. Each order costing at least ₹1,500 before discounts receives 30% off, capped at ₹500 per order.
+3. The same discount can be used once on every separate order.
+4. Shipping costs ₹120 per order if its merchandise value after discount is below ₹1,700. Otherwise, shipping is free.
+5. GST is 12% of the merchandise value after discount. Shipping is not taxed.
+6. Every product must be purchased exactly once.
+
+I believe buying everything together should be cheapest because it avoids delivery charges, but I could be wrong.
+
+What is the cheapest possible way to split these purchases, and exactly how much will I pay?
+
+Give me the final grouping and total cost."""
+
+REASONING_ANSWER = """# Master Solution — Shopping Cart Optimization
+
+## Step 1 — Understand the objective
+
+Four products must be purchased at the lowest possible total cost.
+
+| Product | Price |
+|---|---:|
+| A | ₹1,800 |
+| B | ₹1,650 |
+| C | ₹950 |
+| D | ₹1,150 |
+| **Total** | **₹5,550** |
+
+The store has four pricing rules:
+
+1. Every order worth at least ₹1,500 qualifies for a 30% discount, capped at ₹500 per order.
+2. Shipping costs ₹120 if the discounted merchandise value is below ₹1,700; otherwise, shipping is free.
+3. GST is 12% of the discounted merchandise value, excluding shipping.
+4. Products can be divided into any number of separate orders, with the discount applied independently to each qualifying order.
+
+The objective is to minimize **total merchandise cost after discounts + GST + shipping**, while purchasing every product exactly once.
+
+## Step 2 — Establish the calculation formula
+
+For each order:
+
+**Discount**
+
+Discount = min(30% × Subtotal, ₹500), provided the subtotal is at least ₹1,500. Otherwise, the discount is zero.
+
+**Discounted value**
+
+Discounted value = Subtotal − Discount
+
+**Shipping**
+
+- ₹120 if discounted value is below ₹1,700.
+- ₹0 otherwise.
+
+**Final order cost**
+
+Final cost = (Discounted value × 1.12) + Shipping
+
+Because discounts apply independently to separate orders, the number and composition of orders influence the final amount.
+
+## Step 3 — Identify the optimal grouping
+
+The optimal arrangement is to place three separate orders.
+
+### Order 1 — Product A
+
+| Calculation | Amount |
+|---|---:|
+| Original price | ₹1,800.00 |
+| Discount: min(30% × ₹1,800, ₹500) | −₹500.00 |
+| Discounted value | ₹1,300.00 |
+| GST at 12% | ₹156.00 |
+| Shipping | ₹120.00 |
+| **Final payment** | **₹1,576.00** |
+
+### Order 2 — Product B
+
+| Calculation | Amount |
+|---|---:|
+| Original price | ₹1,650.00 |
+| Discount: 30% × ₹1,650 | −₹495.00 |
+| Discounted value | ₹1,155.00 |
+| GST at 12% | ₹138.60 |
+| Shipping | ₹120.00 |
+| **Final payment** | **₹1,413.60** |
+
+### Order 3 — Products C and D
+
+| Calculation | Amount |
+|---|---:|
+| Original price: ₹950 + ₹1,150 | ₹2,100.00 |
+| Discount: min(30% × ₹2,100, ₹500) | −₹500.00 |
+| Discounted value | ₹1,600.00 |
+| GST at 12% | ₹192.00 |
+| Shipping | ₹120.00 |
+| **Final payment** | **₹1,912.00** |
+
+### Total payment
+
+₹1,576 + ₹1,413.60 + ₹1,912 = **₹4,901.60**
+
+## Step 4 — Verify the global optimum
+
+Finding a cheap arrangement is not sufficient. We must establish that no other valid arrangement costs less.
+
+Four distinct products can be partitioned into nonempty, unordered groups in exactly 15 ways.
+
+The following table evaluates every possible grouping.
+
+| Orders | Grouping | Total payable |
+|---|---|---:|
+| 1 | ABCD | ₹5,656.00 |
+| 2 | A / BCD | ₹5,216.00 |
+| 2 | B / ACD | ₹5,221.60 |
+| 2 | C / ABD | ₹5,776.00 |
+| 2 | D / ABC | ₹5,776.00 |
+| 2 | AB / CD | ₹5,216.00 |
+| 2 | AC / BD | ₹5,096.00 |
+| 2 | AD / BC | ₹5,096.00 |
+| 3 | **A / B / CD** | **₹4,901.60** |
+| 3 | A / C / BD | ₹5,336.00 |
+| 3 | A / D / BC | ₹5,336.00 |
+| 3 | B / C / AD | ₹5,341.60 |
+| 3 | B / D / AC | ₹5,341.60 |
+| 3 | C / D / AB | ₹5,896.00 |
+| 4 | A / B / C / D | ₹5,581.60 |
+
+Every possible arrangement has been evaluated using the same discount, shipping, and GST rules.
+
+**The unique minimum is ₹4,901.60, obtained with A / B / CD.**
+
+This establishes that the solution is globally optimal.
+
+## Step 5 — Explain why the optimal grouping works
+
+The key insight is that **splitting orders can unlock additional discounts that outweigh additional shipping charges**.
+
+Consider grouping A+B together versus purchasing A and B separately.
+
+**A+B together**
+
+- Merchandise subtotal = ₹3,450
+- Discount = ₹500
+- GST = ₹354
+- Shipping = ₹0
+- Total = ₹3,304
+
+**A and B separately**
+
+- A total = ₹1,576
+- B total = ₹1,413.60
+- Combined total = ₹2,989.60
+
+Separating A and B saves:
+
+₹3,304 − ₹2,989.60 = **₹314.40**
+
+Why?
+
+- Additional discount unlocked = ₹495
+- Additional GST saved = ₹59.40
+- Additional shipping incurred = ₹240
+
+Net benefit:
+
+₹495 + ₹59.40 − ₹240 = **₹314.40**
+
+The extra discount and tax savings exceed the additional shipping cost.
+
+However, separating all four products is not optimal because C and D individually do not qualify for the discount. Keeping C and D together creates another ₹500 discount.
+
+Therefore, the optimal grouping balances three competing factors:
+
+1. Maximizing independently available discounts.
+2. Avoiding unnecessary shipping charges.
+3. Minimizing GST through lower discounted merchandise values.
+
+## Step 6 — Final answer
+
+**Purchase the products in three separate orders:**
+
+| Order | Products | Final amount |
+|---|---|---:|
+| 1 | A | ₹1,576.00 |
+| 2 | B | ₹1,413.60 |
+| 3 | C + D | ₹1,912.00 |
+| **Total** | | **₹4,901.60** |
+
+Total discount received = ₹1,495.00
+
+Total GST = ₹486.60
+
+Total shipping = ₹360.00
+
+**Minimum total payable = ₹4,901.60**
+
+Buying everything together would cost ₹5,656.
+
+**Total savings = ₹754.40**
+"""
+
 LLAMA_SCOPE = {
     "Base Model": "base",
     "Fine-tuned Model": "instruct",
@@ -298,7 +518,7 @@ def company_mark(company: str, color: str) -> str:
 
 def ensure_rlhf_company() -> str:
     company = st.session_state.get("rlhf_company")
-    if company not in RLHF_CATALOG:
+    if company != "OpenAI" or company not in RLHF_CATALOG:
         company = DEFAULT_RLHF_COMPANY
         st.session_state.rlhf_company = company
     models = RLHF_CATALOG[company]
@@ -398,6 +618,10 @@ def commit_assistant(
     company: str | None = None,
     pane: str | None = None,
 ) -> None:
+    if history and history[-1]["role"] == "assistant" and hold_api_error(history[-1], text):
+        if company:
+            history[-1]["company"] = company
+        return
     reply = with_rlhf_note(topic, text, done=True, pane=pane)
     if history and history[-1]["role"] == "assistant":
         history[-1]["content"] = reply
@@ -419,6 +643,140 @@ def recover_rlhf_lock() -> None:
 def recover_llama_lock(topic: str) -> None:
     if llama_busy(topic) and not llama_pending(topic):
         set_llama_run(topic, busy=False)
+
+
+def ensure_llama_api(topic: str) -> str:
+    state = st.session_state.get(llama_key(topic, "api"))
+    if state not in {"On", "Off"}:
+        state = "On"
+        st.session_state[llama_key(topic, "api")] = state
+    return state
+
+
+def select_llama_api(topic: str, state: str) -> None:
+    if llama_busy(topic):
+        return
+    if state in {"On", "Off"}:
+        st.session_state[llama_key(topic, "api")] = state
+
+
+def ensure_rlhf_api() -> str:
+    state = st.session_state.get("rlhf_api")
+    if state not in {"On", "Off"}:
+        state = "On"
+        st.session_state.rlhf_api = state
+    return state
+
+
+def select_rlhf_api(state: str) -> None:
+    if rlhf_busy():
+        return
+    if state in {"On", "Off"}:
+        st.session_state.rlhf_api = state
+
+
+def rlhf_api_back_on() -> None:
+    st.session_state.rlhf_api = "On"
+
+
+def _reason_example_key(topic: str) -> str:
+    if topic == "RLHF-aligned Model":
+        return "rlhf_reason_example"
+    return llama_key(topic, "reason_example")
+
+
+def _chat_draft_key(topic: str) -> str:
+    return f"chat_input_{topic}"
+
+
+def ensure_reason_example(topic: str) -> str:
+    key = _reason_example_key(topic)
+    state = st.session_state.get(key)
+    if state not in {"On", "Off"}:
+        state = "Off"
+        st.session_state[key] = state
+    return state
+
+
+def select_reason_example(topic: str, state: str) -> None:
+    busy = rlhf_busy() if topic == "RLHF-aligned Model" else llama_busy(topic)
+    if busy or state not in {"On", "Off"}:
+        return
+    st.session_state[_reason_example_key(topic)] = state
+    st.session_state[_chat_draft_key(topic)] = (
+        REASONING_EXAMPLE if state == "On" else ""
+    )
+    if topic == "RLHF-aligned Model" and state == "On":
+        select_rlhf_model("GPT-5.6 Sol")
+
+
+API_STOP_ERRORS = (
+    ("401", "401 Unauthorized", "The provider rejected the key. The call stops here, and no model response is produced."),
+    ("402", "402 Billing / Credits", "The account has no credits left. The provider refuses the request before a model runs."),
+    ("429", "429 Rate Limit", "Too many requests arrived too quickly. The provider stops this call."),
+    ("timeout", "Timeout", "The provider did not answer in time. The app stops waiting and never receives a model response."),
+    ("5xx", "5xx Provider Error", "The provider failed on its own side. The model response stage is not reached."),
+    ("connection", "Connection refused", "The API was not connected. The request stopped at the provider, so there is no model response."),
+)
+
+
+def connection_error_line() -> str:
+    if sys.platform == "win32":
+        refused = (
+            "[WinError 10061] No connection could be made because the target "
+            "machine actively refused it"
+        )
+    else:
+        refused = "[Errno 111] Connection refused"
+    return (
+        "openai.APIConnectionError: Connection error.\n"
+        f"httpx2.ConnectError: {refused}"
+    )
+
+
+def classify_api_error(text: str) -> str | None:
+    low = (text or "").lower()
+    if "could not answer" not in low and "apiconnectionerror" not in low:
+        return None
+    if "402" in low or "billing" in low or "credit" in low:
+        return "402"
+    if "401" in low or "unauthorized" in low or "invalid api key" in low or "incorrect api key" in low:
+        return "401"
+    if "429" in low or "rate limit" in low:
+        return "429"
+    if "timeout" in low or "timed out" in low:
+        return "timeout"
+    if any(code in low for code in ("500", "502", "503", "504")) or "internal server" in low:
+        return "5xx"
+    return "connection"
+
+
+def hold_api_error(row: dict, text: str) -> bool:
+    code = classify_api_error(text)
+    if not code:
+        return False
+    row["content"] = (text or "").strip()
+    row["status"] = "api_error"
+    row["error_code"] = code
+    return True
+
+
+def api_off_message(company: str | None = None) -> dict[str, str]:
+    detail = connection_error_line()
+    print(detail, flush=True)
+    row = {
+        "role": "assistant",
+        "content": detail,
+        "status": "api_error",
+        "error_code": "connection",
+    }
+    if company:
+        row["company"] = company
+    return row
+
+
+def llama_api_back_on(topic: str) -> None:
+    st.session_state[llama_key(topic, "api")] = "On"
 
 
 def ensure_llama_control_mode(topic: str) -> str:
@@ -508,10 +866,7 @@ def apply_scheduled_llama_control_reset(topic: str) -> bool:
 
 
 def llama_controls_ready_for_request(topic: str) -> bool:
-    if ensure_llama_control_mode(topic) != "Manual":
-        return True
-    applied = st.session_state.get(llama_key(topic, "applied_controls"))
-    return isinstance(applied, dict)
+    return True
 
 
 def llama_control_snapshot(topic: str) -> dict | None:
@@ -533,6 +888,12 @@ def llama_controls_from_pending(pending: dict | None) -> dict[str, object]:
         top_p=pending.get("top_p"),
         frequency_penalty=pending.get("frequency_penalty"),
     )
+
+
+def llama_standin_controls(topic: str, controls: dict[str, object] | None = None) -> dict[str, object]:
+    if topic == "Base Model":
+        return {"temperature": 1.1}
+    return {"temperature": 0.5}
 
 
 def apply_llama_control_draft(topic: str) -> None:
@@ -604,6 +965,11 @@ def select_rlhf_company(company: str) -> None:
 
 def select_rlhf_model(model: str) -> None:
     if rlhf_busy():
+        return
+    if (
+        ensure_reason_example("RLHF-aligned Model") == "On"
+        and model != "GPT-5.6 Sol"
+    ):
         return
     if st.session_state.get("rlhf_model") != model:
         st.session_state.rlhf_model = model
@@ -882,7 +1248,7 @@ def rlhf_note(*, done: bool = False) -> str:
 
 def llama_note(topic: str, *, done: bool = False) -> str:
     if topic == "Base Model":
-        label = "Meta's Llama 3.1 8B base"
+        label = "Meta's Llama 3.2 3B base"
     elif topic == "Fine-tuned Model":
         label = "Meta's Llama 3.1 8B Instruct"
     else:
@@ -946,6 +1312,14 @@ def api_messages(messages: list[dict[str, str]]) -> list[dict[str, str]]:
     return history
 
 
+def fresh_user_message(messages: list[dict[str, str]]) -> list[dict[str, str]]:
+    """Base and Fine-tuned see only the latest user turn."""
+    for message in reversed(api_messages(messages)):
+        if message["role"] == "user":
+            return [message]
+    return []
+
+
 def model_reply(
     topic: str,
     messages: list[dict[str, str]],
@@ -959,22 +1333,28 @@ def model_reply(
     control_mode: str | None = None,
 ) -> str:
     document = st.session_state.get(doc_context_key(topic), "")
-    if topic == "Base Model":
-        return llama_chat(
-            LLAMA_BASE_MODEL,
-            api_messages(messages),
+    if topic in LLAMA_TOPICS:
+        kind = "llama_instruct" if topic == "Fine-tuned Model" else "llama_base"
+        return openai_chat(
+            LLAMA_STANDIN_MODEL,
+            fresh_user_message(messages),
             document=document,
-            kind="base",
-            topic=topic,
+            kind=kind,
+            controls=llama_standin_controls(topic, llama_request_params()),
         )
-    if topic == "Fine-tuned Model":
-        return llama_chat(
-            LLAMA_INSTRUCT_MODEL,
-            api_messages(messages),
-            document=document,
-            kind="instruct",
-            topic=topic,
-        )
+        # Hugging Face, inactive:
+        # model_id = (
+        #     LLAMA_INSTRUCT_MODEL
+        #     if topic == "Fine-tuned Model"
+        #     else LLAMA_BASE_MODEL
+        # )
+        # return llama_chat(
+        #     model_id,
+        #     fresh_user_message(messages),
+        #     document=document,
+        #     kind="instruct" if topic == "Fine-tuned Model" else "base",
+        #     topic=topic,
+        # )
     if topic == "RLHF-aligned Model":
         company = company or st.session_state.get("rlhf_company")
         model = model or st.session_state.get("rlhf_model")
@@ -1594,6 +1974,165 @@ def format_message_html(content: str) -> str:
     return "".join(chunks)
 
 
+_GATE_SRC: dict[tuple[str, str], str] = {}
+_ERROR_REACTION_SRC: dict[tuple[str, str], str] = {}
+_ERROR_REACTION_ASSET = {
+    "401": "401",
+    "402": "402",
+    "429": "429",
+    "timeout": "timeout",
+    "5xx": "5xx",
+    "connection": "connection",
+}
+
+
+def _gate_frame(name: str, frame: str) -> str:
+    key = (name, frame)
+    cached = _GATE_SRC.get(key)
+    if not cached:
+        path = ASSETS / "gates" / "animated" / f"{name}-{frame}.webp"
+        raw = b64encode(path.read_bytes()).decode("ascii")
+        cached = f"data:image/webp;base64,{raw}"
+        _GATE_SRC[key] = cached
+    return cached
+
+
+def _gate(name: str) -> str:
+    sprite = _gate_frame(name, "sprite")
+    stop = _gate_frame(name, "stop")
+    return (
+        f'<span class="api-stop-gate api-stop-gate--{escape(name)}" aria-hidden="true">'
+        '<span class="api-stop-gate-bar"></span>'
+        '<span class="api-stop-hand-impact"><i></i><i></i><i></i></span>'
+        '<span class="api-stop-person-window">'
+        f'<img class="api-stop-person api-stop-person--sprite" src="{sprite}" alt="">'
+        f'<img class="api-stop-person api-stop-person--motion-off" src="{stop}" alt="">'
+        "</span>"
+        "</span>"
+    )
+
+
+def _error_reaction(name: str, error: str, alt: str) -> str:
+    asset = _ERROR_REACTION_ASSET[error]
+    key = (name, asset)
+    cached = _ERROR_REACTION_SRC.get(key)
+    if not cached:
+        path = ASSETS / "gates" / "errors" / f"{name}-{asset}.webp"
+        raw = b64encode(path.read_bytes()).decode("ascii")
+        cached = f"data:image/webp;base64,{raw}"
+        _ERROR_REACTION_SRC[key] = cached
+    return (
+        '<img class="api-error-reaction-img" '
+        f'src="{cached}" alt="{escape(alt)}" loading="lazy">'
+    )
+
+
+def _api_node(kind: str, label: str, mark: str) -> str:
+    return (
+        f'<div class="api-stop-node api-stop-node--{kind}">'
+        f'<span class="api-stop-ico">{mark}</span>'
+        f"<span>{escape(label)}</span>"
+        "</div>"
+    )
+
+
+def api_stop_html(code: str, provider: str, detail: str) -> str:
+    chosen = "meta" if provider == "Meta" else "openai"
+    rows = []
+    for key, title, body in API_STOP_ERRORS:
+        hit = " is-hit" if key == code else ""
+        current = '<span class="api-error-current">Current error</span>' if key == code else ""
+        reaction = _error_reaction(
+            chosen,
+            key,
+            f"{provider} reaction for {title}",
+        )
+        rows.append(
+            f'<tr class="api-error-row{hit}" data-api-error="{escape(key)}">'
+            '<td class="api-error-kind">'
+            f"<strong>{escape(title)}</strong>{current}"
+            "</td>"
+            f'<td class="api-error-meaning">{escape(body)}</td>'
+            f'<td class="api-error-reaction">{reaction}</td>'
+            "</tr>"
+        )
+    detail_html = ""
+    if detail.strip():
+        detail_html = (
+            '<div class="api-stop-detail-wrap">'
+            '<span>Raw error returned by the app</span>'
+            f'<pre class="api-stop-detail">{escape(detail.strip())}</pre>'
+            "</div>"
+        )
+    user_ico = (
+        '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="3.2" fill="none" stroke="currentColor" stroke-width="1.8"/>'
+        '<path d="M5 19.2c1.4-3 3.8-4.4 7-4.4s5.6 1.4 7 4.4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>'
+    )
+    app_ico = (
+        '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="16" height="6" rx="1.4" fill="none" stroke="currentColor" stroke-width="1.7"/>'
+        '<rect x="4" y="14" width="16" height="6" rx="1.4" fill="none" stroke="currentColor" stroke-width="1.7"/>'
+        '<circle cx="7.2" cy="7" r="0.8" fill="currentColor"/><circle cx="7.2" cy="17" r="0.8" fill="currentColor"/></svg>'
+    )
+    choose_ico = (
+        '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.2 20.2 12 12 20.8 3.8 12Z" fill="none" stroke="currentColor" stroke-width="1.7"/>'
+        '<circle cx="12" cy="12" r="1.3" fill="currentColor"/></svg>'
+    )
+    reply_ico = (
+        '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 3.8h7.2L19 8.6V20.2H7Z" fill="none" stroke="currentColor" stroke-width="1.7"/>'
+        '<path d="M14 3.8V8.8H19" fill="none" stroke="currentColor" stroke-width="1.7"/></svg>'
+    )
+    back_ico = (
+        '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="8" cy="9" r="2.2" fill="none" stroke="currentColor" stroke-width="1.6"/>'
+        '<circle cx="16" cy="9" r="2.2" fill="none" stroke="currentColor" stroke-width="1.6"/>'
+        '<path d="M3.8 18.6c.8-2.2 2.4-3.2 4.2-3.2s3.4 1 4.2 3.2M11.8 18.6c.8-2.2 2.4-3.2 4.2-3.2s3.4 1 4.2 3.2" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>'
+    )
+    if chosen == "openai":
+        branch = (
+            '<div class="api-stop-branch api-stop-branch--openai">'
+            '<span class="api-stop-link"></span>'
+            + _gate("openai")
+            + _api_node("openai", "OpenAI API", company_mark("OpenAI", "#111111"))
+            + "</div>"
+        )
+    else:
+        branch = (
+            '<div class="api-stop-branch api-stop-branch--meta">'
+            '<span class="api-stop-link"></span>'
+            + _gate("meta")
+            + _api_node("meta", "Meta API", company_mark("Meta", "#0668E1"))
+            + "</div>"
+        )
+    return (
+        f'<div class="api-stop" data-provider="{chosen}" data-error="{escape(code)}">'
+        '<p class="api-stop-title">Where the API call stops when provider access fails</p>'
+        '<div class="api-stop-banner">API ERROR — request stops here</div>'
+        '<div class="api-stop-board">'
+        + _api_node("user", "User / Frontend", user_ico)
+        + '<span class="api-stop-link is-go" style="--d:0s"></span>'
+        + _api_node("app", "App backend", app_ico)
+        + '<span class="api-stop-link is-go" style="--d:173ms"></span>'
+        + _api_node("choose", "Choose provider", choose_ico)
+        + f'<div class="api-stop-fork">{branch}</div>'
+        + '<span class="api-stop-link is-dead"></span>'
+        + _api_node("reply", "Model response", reply_ico)
+        + '<span class="api-stop-link is-dead"></span>'
+        + _api_node("back", "Back to user", back_ico)
+        + "</div>"
+        '<div class="api-stop-return" aria-hidden="true"><span>Show error to user</span><i></i><span>Error response</span></div>'
+        '<div class="api-error-table-heading">Six common API stopping points</div>'
+        '<div class="api-error-table-wrap">'
+        '<table class="api-error-table">'
+        '<caption>Common API errors and their consequences</caption>'
+        '<thead><tr><th scope="col">Error</th>'
+        '<th scope="col" colspan="2">Why the response stops (Hover over the below caricatures)</th></tr></thead>'
+        f'<tbody>{"".join(rows)}</tbody>'
+        "</table>"
+        "</div>"
+        f"{detail_html}"
+        "</div>"
+    )
+
+
 def chat_thread_html(
     topic: str,
     *,
@@ -1607,6 +2146,13 @@ def chat_thread_html(
             content.startswith("This answer is being generated")
             and "\n\n" not in content
         )
+        if status == "api_error":
+            provider = "Meta" if topic in LLAMA_TOPICS else "OpenAI"
+            return api_stop_html(
+                message.get("error_code") or "connection",
+                provider,
+                content,
+            )
         if generating:
             return TYPING_DOTS
         if status == "streaming":
@@ -1664,36 +2210,97 @@ def chat_thread_html(
     return "".join(rows)
 
 
+def reasoning_html(topic: str, locked: bool, *, rlhf: bool) -> str:
+    on = ensure_reason_example(topic) == "On"
+    nxt = "Off" if on else "On"
+    cls = "llama-api-toggle is-reason is-on" if on else "llama-api-toggle is-reason is-off"
+    if locked:
+        cls += " is-locked"
+    attr = "data-rlhf-reason" if rlhf else "data-llama-reason"
+    view = "rlhf" if rlhf else llama_scope(topic)
+    problem = escape(REASONING_EXAMPLE).replace("\n", "<br>")
+    answer = format_message_html(REASONING_ANSWER)
+    return (
+        "<span class='reason-hover'>"
+        f"<span class='{cls}' role='button' tabindex='0' "
+        f"{attr}='{nxt}' aria-pressed='{'true' if on else 'false'}' "
+        f"aria-label='Reasoning example {('on' if on else 'off')}'>"
+        "<span class='reason-info' aria-hidden='true'>i</span>"
+        "<span class='llama-api-name'>Reasoning example</span>"
+        "<span class='llama-api-track' aria-hidden='true'><span class='llama-api-knob'></span></span>"
+        f"<span class='llama-api-state'>{'On' if on else 'Off'}</span>"
+        "</span>"
+        "<span class='reason-card' role='tooltip'>"
+        "<span class='reason-card-body'>"
+        "<span class='reason-card-tabs'>"
+        f"<label class='reason-card-tab'><input type='radio' name='reason-view-{view}' value='problem' checked>Problem</label>"
+        f"<label class='reason-card-tab'><input type='radio' name='reason-view-{view}' value='answer'>Answer</label>"
+        "</span>"
+        f"<span class='reason-card-copy reason-pane-problem'>{problem}</span>"
+        f"<span class='reason-pane-answer'><span class='model-chat-bubble'>{answer}</span></span>"
+        "</span>"
+        "</span>"
+        "</span>"
+    )
+
+
+def rlhf_api_html(locked: bool) -> str:
+    on = ensure_rlhf_api() == "On"
+    nxt = "Off" if on else "On"
+    cls = "llama-api-toggle is-on" if on else "llama-api-toggle is-off"
+    if locked:
+        cls += " is-locked"
+    return (
+        f"<span class='{cls}' role='button' tabindex='0' "
+        f"data-rlhf-api='{nxt}' aria-pressed='{'true' if on else 'false'}' "
+        f"aria-label='API {('on' if on else 'off')}'>"
+        "<span class='llama-api-name'>API</span>"
+        "<span class='llama-api-track' aria-hidden='true'><span class='llama-api-knob'></span></span>"
+        f"<span class='llama-api-state'>{'On' if on else 'Off'}</span>"
+        "</span>"
+    )
+
+
 def rlhf_bar_html() -> str:
     company = ensure_rlhf_company()
     model = st.session_state.get("rlhf_model")
     models = RLHF_CATALOG[company]
     locked = rlhf_busy()
     caret = '<span class="rlhf-caret-btn" aria-hidden="true"></span>'
-    capsules = "".join(
-        (
-            f'<span class="rlhf-capsule'
-            f'{" is-active" if name == company else ""}" role="button" tabindex="0" '
-            f'data-rlhf-company="{escape(name)}">'
-            f"{company_mark(name, '#111111' if name == company else '#ffffff')}"
-            f"<span>{escape(name)}</span></span>"
-        )
-        for name in RLHF_CATALOG
+    brand = (
+        "<div class='rlhf-switch' aria-label='Company'>"
+        "<span class='rlhf-capsule is-active is-brand'>"
+        f"{company_mark('OpenAI', '#111111')}"
+        "<span>OpenAI</span></span>"
+        "</div>"
     )
     model_label = model if model in models else "Select model"
     model_toggle = (
         f"{company_mark(company, '#ffffff')}"
         f"<span>{escape(model_label)}</span>{caret}"
     )
-    model_items = "".join(
-        (
-            f'<span class="rlhf-dd-item'
-            f'{" is-active" if label == model else ""}" role="button" tabindex="0" '
-            f'data-rlhf-model="{escape(model_widget_id(model_id))}">'
+    reason_on = ensure_reason_example("RLHF-aligned Model") == "On"
+    model_items = []
+    for label, model_id in models.items():
+        blocked = reason_on and label == "GPT-4.1"
+        cls = "rlhf-dd-item"
+        if label == model:
+            cls += " is-active"
+        if blocked:
+            cls += " is-disabled"
+        pick = (
+            ""
+            if blocked
+            else (
+                " role='button' tabindex='0' "
+                f"data-rlhf-model='{escape(model_widget_id(model_id))}'"
+            )
+        )
+        model_items.append(
+            f"<span class='{cls}'{pick} aria-disabled='{'true' if blocked else 'false'}'>"
             f"{company_mark(company, '#ffffff')}<span>{escape(label)}</span></span>"
         )
-        for label, model_id in models.items()
-    )
+    model_items = "".join(model_items)
     if locked:
         model_control = (
             "<div class='rlhf-dd'>"
@@ -1716,11 +2323,10 @@ def rlhf_bar_html() -> str:
         openai_controls = f"{control_mode_html(locked)}{controls_html(locked)}"
     return (
         f"<div class='rlhf-bar{' is-locked' if locked else ''}'>"
-        "<div class='rlhf-bar-left'>"
-        "<span class='model-chat-title'>AI assistant</span>"
-        "</div>"
+        f"<div class='rlhf-bar-left'>{brand}</div>"
         "<div class='rlhf-menus'>"
-        f"<div class='rlhf-switch' role='tablist' aria-label='Company'>{capsules}</div>"
+        f"{rlhf_api_html(locked)}"
+        f"{reasoning_html('RLHF-aligned Model', locked, rlhf=True)}"
         f"{model_control}"
         f"{openai_controls}"
         "<span class='rlhf-clear' role='button' tabindex='0' data-rlhf-clear='1'>Clear</span>"
@@ -2047,6 +2653,23 @@ def llama_controls_html(topic: str, locked: bool) -> str:
     )
 
 
+def llama_api_html(topic: str, locked: bool) -> str:
+    on = ensure_llama_api(topic) == "On"
+    nxt = "Off" if on else "On"
+    cls = "llama-api-toggle is-on" if on else "llama-api-toggle is-off"
+    if locked:
+        cls += " is-locked"
+    return (
+        f"<span class='{cls}' role='button' tabindex='0' "
+        f"data-llama-api='{nxt}' aria-pressed='{'true' if on else 'false'}' "
+        f"aria-label='API {('on' if on else 'off')}'>"
+        "<span class='llama-api-name'>API</span>"
+        "<span class='llama-api-track' aria-hidden='true'><span class='llama-api-knob'></span></span>"
+        f"<span class='llama-api-state'>{'On' if on else 'Off'}</span>"
+        "</span>"
+    )
+
+
 def llama_bar_html(topic: str) -> str:
     locked = llama_busy(topic)
     brand = (
@@ -2055,7 +2678,10 @@ def llama_bar_html(topic: str) -> str:
         "<span class='model-chat-title'>Llama</span>"
         "</span>"
     )
-    extras = f"{llama_control_mode_html(topic, locked)}{llama_controls_html(topic, locked)}"
+    extras = (
+        f"{llama_api_html(topic, locked)}"
+        f"{reasoning_html(topic, locked, rlhf=False)}"
+    )
     return (
         f"<div class='rlhf-bar{' is-locked' if locked else ''}' data-llama-scope='{llama_scope(topic)}'>"
         f"<div class='rlhf-bar-left'>{brand}</div>"
@@ -2347,10 +2973,11 @@ def stream_ctx_pane(topic: str, pane: str, shell) -> bool:
         ):
             acc += token
             if history and history[-1]["role"] == "assistant":
-                history[-1]["content"] = with_rlhf_note(
-                    topic, acc, done=False, pane=pane
-                )
-                history[-1]["status"] = "streaming"
+                if not hold_api_error(history[-1], acc):
+                    history[-1]["content"] = with_rlhf_note(
+                        topic, acc, done=False, pane=pane
+                    )
+                    history[-1]["status"] = "streaming"
             now = time.monotonic()
             if last_paint == 0.0 or now - last_paint >= 0.05:
                 shell.html(ctx_pane_html(topic, pane))
@@ -2408,7 +3035,21 @@ def render_input_context_block(topic: str, header_html: str) -> None:
 def render_rlhf_buttons() -> None:
     models = RLHF_CATALOG[ensure_rlhf_company()]
     with st.container(key="rlhf_picker", gap=None):
-        for name in RLHF_CATALOG:
+        for name in ("On", "Off"):
+            st.button(
+                name,
+                key=f"rlhf_reason_{name}",
+                on_click=select_reason_example,
+                args=("RLHF-aligned Model", name),
+            )
+        for name in ("On", "Off"):
+            st.button(
+                name,
+                key=f"rlhf_api_{name}",
+                on_click=select_rlhf_api,
+                args=(name,),
+            )
+        for name in ("OpenAI",):
             st.button(
                 name,
                 key=f"rlhf_co_{name}",
@@ -2453,11 +3094,18 @@ def render_rlhf_buttons() -> None:
 def render_llama_buttons(topic: str) -> None:
     slot = llama_scope(topic)
     with st.container(key=f"llama_picker_{slot}", gap=None):
-        for name in ("Auto", "Manual"):
+        for name in ("On", "Off"):
             st.button(
                 name,
-                key=f"llama_mode_{slot}_{name}",
-                on_click=select_llama_control_mode,
+                key=f"llama_reason_{slot}_{name}",
+                on_click=select_reason_example,
+                args=(topic, name),
+            )
+        for name in ("On", "Off"):
+            st.button(
+                name,
+                key=f"llama_api_{slot}_{name}",
+                on_click=select_llama_api,
                 args=(topic, name),
             )
         st.button(
@@ -2472,18 +3120,6 @@ def render_llama_buttons(topic: str) -> None:
             on_click=request_chat_stop,
             args=(topic,),
         )
-        with st.form(f"llama_ctrl_form_{slot}", border=False):
-            st.text_area(
-                "controls_draft",
-                key=llama_key(topic, "controls_draft"),
-                label_visibility="collapsed",
-            )
-            submitted = st.form_submit_button(
-                "Apply controls",
-                key=f"llama_ctrl_ok_{slot}",
-            )
-        if submitted:
-            apply_llama_control_draft(topic)
 
 
 def render(
@@ -2526,6 +3162,12 @@ def render(
             st.html(header_html)
             with st.container(key="encdec_body"):
                 encoder_decoder.render()
+        return
+    if topic == PROMPTING_TOPIC:
+        from services import prompting
+
+        with st.container(key="lesson_block", gap=None):
+            prompting.render(header_html)
         return
     if is_rlhf:
         recover_rlhf_lock()
@@ -2659,8 +3301,9 @@ def render(
                 ):
                     acc += token
                     if history and history[-1]["role"] == "assistant":
-                        history[-1]["content"] = with_rlhf_note(topic, acc, done=False)
-                        history[-1]["status"] = "streaming"
+                        if not hold_api_error(history[-1], acc):
+                            history[-1]["content"] = with_rlhf_note(topic, acc, done=False)
+                            history[-1]["status"] = "streaming"
                     now = time.monotonic()
                     if last_paint == 0.0 or now - last_paint >= 0.05:
                         shell.html(lesson_html())
@@ -2686,28 +3329,42 @@ def render(
             if history and history[-1]["role"] == "assistant":
                 history[-1]["status"] = "streaming"
             finished = False
-            model_id = (
-                LLAMA_INSTRUCT_MODEL
-                if topic == "Fine-tuned Model"
-                else LLAMA_BASE_MODEL
+            kind = (
+                "llama_instruct" if topic == "Fine-tuned Model" else "llama_base"
             )
-            kind = "instruct" if topic == "Fine-tuned Model" else "base"
-            api_controls = llama_controls_from_pending(pending)
+            api_controls = llama_standin_controls(
+                topic, llama_controls_from_pending(pending)
+            )
             try:
-                for token in llama_stream_tokens(
-                    model_id,
-                    api_messages(history),
+                # Hugging Face, inactive:
+                # model_id = (
+                #     LLAMA_INSTRUCT_MODEL
+                #     if topic == "Fine-tuned Model"
+                #     else LLAMA_BASE_MODEL
+                # )
+                # token_stream = llama_stream_tokens(
+                #     model_id,
+                #     fresh_user_message(history),
+                #     document=document,
+                #     kind="instruct" if topic == "Fine-tuned Model" else "base",
+                #     topic=topic,
+                #     controls=llama_controls_from_pending(pending),
+                # )
+                token_stream = openai_stream_tokens(
+                    LLAMA_STANDIN_MODEL,
+                    fresh_user_message(history),
                     document=document,
                     kind=kind,
-                    topic=topic,
                     controls=api_controls,
-                ):
+                )
+                for token in token_stream:
                     acc += token
                     if history and history[-1]["role"] == "assistant":
-                        history[-1]["content"] = with_rlhf_note(
-                            topic, acc, done=False
-                        )
-                        history[-1]["status"] = "streaming"
+                        if not hold_api_error(history[-1], acc):
+                            history[-1]["content"] = with_rlhf_note(
+                                topic, acc, done=False
+                            )
+                            history[-1]["status"] = "streaming"
                     now = time.monotonic()
                     if last_paint == 0.0 or now - last_paint >= 0.05:
                         shell.html(lesson_html())
@@ -2740,20 +3397,27 @@ def render(
                     temperature=pending.get("temperature"),
                     control_mode=pending.get("control_mode"),
                 )
-            reply = with_rlhf_note(topic, body, done=True)
-            if history and history[-1]["role"] == "assistant":
-                history[-1]["content"] = reply
+            code = classify_api_error(body)
+            if code and history and history[-1]["role"] == "assistant":
+                history[-1]["content"] = body
                 history[-1]["company"] = company
-                history[-1]["status"] = "done"
+                history[-1]["status"] = "api_error"
+                history[-1]["error_code"] = code
             else:
-                history.append(
-                    {
-                        "role": "assistant",
-                        "content": reply,
-                        "company": company,
-                        "status": "done",
-                    }
-                )
+                reply = with_rlhf_note(topic, body, done=True)
+                if history and history[-1]["role"] == "assistant":
+                    history[-1]["content"] = reply
+                    history[-1]["company"] = company
+                    history[-1]["status"] = "done"
+                else:
+                    history.append(
+                        {
+                            "role": "assistant",
+                            "content": reply,
+                            "company": company,
+                            "status": "done",
+                        }
+                    )
             st.session_state.rlhf_pending = None
             st.session_state.rlhf_busy = False
             if pending.get("type") != "files":
@@ -2813,6 +3477,10 @@ def render(
                 )
                 if is_rlhf:
                     company = ensure_rlhf_company()
+                    if ensure_rlhf_api() != "On":
+                        history.append(api_off_message(company))
+                        rlhf_api_back_on()
+                        st.rerun()
                     history.append(
                         {
                             "role": "assistant",
@@ -2831,6 +3499,11 @@ def render(
                     }
                     st.session_state.rlhf_busy = True
                     st.rerun()
+                if ensure_llama_api(topic) != "On":
+                    history.append(api_off_message())
+                    llama_api_back_on(topic)
+                    st.rerun()
+                st.session_state[doc_context_key(topic)] = ""
                 ingest_result = ingest_uploads(topic, files)
                 if not text:
                     history.append(
@@ -2851,8 +3524,18 @@ def render(
                 st.rerun()
             elif text:
                 history.append({"role": "user", "content": text})
+                if is_llama and ensure_llama_api(topic) != "On":
+                    history.append(api_off_message())
+                    llama_api_back_on(topic)
+                    st.rerun()
+                if is_llama:
+                    st.session_state[doc_context_key(topic)] = ""
                 if is_rlhf:
                     company = ensure_rlhf_company()
+                    if ensure_rlhf_api() != "On":
+                        history.append(api_off_message(company))
+                        rlhf_api_back_on()
+                        st.rerun()
                     history.append(
                         {
                             "role": "assistant",
