@@ -8142,10 +8142,12 @@ samp,
 [class*="st-key-rlhf_ctrl_form"],
 [class*="st-key-rlhf_clear"],
 [class*="st-key-rlhf_api_"],
+[class*="st-key-rlhf_weather_"],
 [class*="st-key-rlhf_memory_"],
 [class*="st-key-rlhf_reason_"],
 [class*="st-key-llama_mode_"],
 [class*="st-key-llama_api_"],
+[class*="st-key-llama_weather_"],
 [class*="st-key-llama_memory_"],
 [class*="st-key-llama_reason_"],
 [class*="st-key-llama_controls_draft"],
@@ -8292,10 +8294,12 @@ samp,
   pointer-events: none;
 }
 
-.llama-api-toggle.is-reason .llama-api-name {
+.llama-api-toggle.is-reason .llama-api-name,
+.llama-api-name--words {
   text-transform: none;
   letter-spacing: 0;
   font-size: 0.74rem;
+  white-space: nowrap;
 }
 
 .reason-info {
@@ -12303,6 +12307,38 @@ button.qkv-chip {
   border-color: #000000 !important;
   background: #ffffff !important;
   box-shadow: none !important;
+}
+
+.weather-note {
+  margin: 0;
+  padding: 12px 14px;
+  border-radius: 12px;
+  line-height: 1.45;
+}
+
+.weather-note p {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.weather-note-kicker {
+  margin: 0 0 6px !important;
+  font-size: 0.76rem !important;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.weather-note--call {
+  background: #eff6ff;
+  border: 1px solid #60a5fa;
+  color: #1e3a8a;
+}
+
+.weather-note--stop {
+  background: #fff7ed;
+  border: 1px solid #f97316;
+  color: #9a3412;
 }
 
 .prompt-answer-rich.model-chat-bubble {
