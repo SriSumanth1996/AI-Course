@@ -8334,6 +8334,28 @@ samp,
   padding-top: 8px;
 }
 
+.reason-card.weather-card {
+  width: min(440px, 78vw);
+}
+
+.weather-card-copy {
+  display: block;
+  font-size: 0.9rem;
+  font-weight: 500;
+  line-height: 1.45;
+  letter-spacing: 0;
+  text-transform: none;
+  color: #111111;
+}
+
+.weather-card-copy p {
+  margin: 0 0 8px;
+}
+
+.weather-card-copy p:last-child {
+  margin-bottom: 0;
+}
+
 .reason-hover:hover .reason-card,
 .reason-hover:focus-within .reason-card {
   display: block;
