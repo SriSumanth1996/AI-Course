@@ -1,6 +1,6 @@
 (function () {
-          if (window.__lectureChrome === 54) return;
-          window.__lectureChrome = 54;
+          if (window.__lectureChrome === 55) return;
+          window.__lectureChrome = 55;
           window.__crumbForward = true;
           window.__rlhfForward = true;
 
@@ -541,6 +541,18 @@
             if (companyOpt) {
               e.preventDefault();
               clickHidden("rlhf_co_" + companyOpt.getAttribute("data-rlhf-company"));
+              return;
+            }
+            var rlhfMemory = e.target.closest("[data-rlhf-memory]");
+            if (rlhfMemory) {
+              e.preventDefault();
+              clickHidden("rlhf_memory_" + rlhfMemory.getAttribute("data-rlhf-memory"));
+              return;
+            }
+            var llamaMemory = e.target.closest("[data-llama-memory]");
+            if (llamaMemory) {
+              e.preventDefault();
+              clickHidden("llama_memory_" + llamaScope() + "_" + llamaMemory.getAttribute("data-llama-memory"));
               return;
             }
             var rlhfReason = e.target.closest("[data-rlhf-reason]");
