@@ -6,10 +6,12 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 OPENAI_KEY_FILE = ROOT / "openAI API.txt"
 HF_KEY_FILE = ROOT / "HF_Key.txt"
+WEATHER_KEY_FILE = ROOT / "Weather_Key.txt"
 _FILE_KEY_NAMES = {
     "OPENAI_API_KEY",
     "HF_TOKEN",
     "HUGGINGFACE_API_KEY",
+    "WEATHER_API_KEY",
     "API_KEY",
 }
 SECRETS_FILES = (
@@ -70,6 +72,14 @@ def openai_api_key() -> str:
 
 def anthropic_api_key() -> str:
     return _from_secrets("ANTHROPIC_API_KEY") or _from_env("ANTHROPIC_API_KEY")
+
+
+def weather_api_key() -> str:
+    return (
+        _from_secrets("WEATHER_API_KEY")
+        or _from_env("WEATHER_API_KEY")
+        or _from_file(WEATHER_KEY_FILE)
+    )
 
 
 def huggingface_api_key() -> str:
