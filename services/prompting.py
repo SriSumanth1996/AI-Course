@@ -10,6 +10,7 @@ import streamlit as st
 from services.openai_chat import stream_tokens
 
 MODEL = "gpt-4o-mini"
+COT_MODEL = "gpt-4.1"
 TEMPERATURES = {"zero": 1.3, "one": 0.7, "few": 0.0}
 LABELS = {
     "zero": "Zero-shot",
@@ -294,7 +295,7 @@ def render_cot(header_html: str) -> None:
     holder.html(_cot_answer_html(mode, "", busy=True))
     try:
         for token in stream_tokens(
-            MODEL,
+            COT_MODEL,
             [{"role": "user", "content": CART_PROMPTS[mode]}],
             kind="prompting",
             controls=_cot_controls(mode),
