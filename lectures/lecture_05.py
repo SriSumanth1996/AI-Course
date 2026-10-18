@@ -43,8 +43,9 @@ from services.weather import WeatherError
 from services.weather import attach_reading
 from services.weather import current_weather
 from services.weather import is_weather_question
+from services.weather import WeatherRequest
 from services.weather import parse_weather_decision
-from services.weather import parse_weather_query
+from services.weather import parse_weather_request
 from services.weather import place_from_question
 from services.openai_controls import (
     DEFAULT_OUTPUT_LENGTH,
@@ -822,6 +823,15 @@ def _weather_report_key(topic: str) -> str:
     return f"weather_report::{topic}"
 
 
+def _weather_question_key(topic: str) -> str:
+    return f"weather_question::{topic}"
+
+
+def _clear_weather_followup(topic: str) -> None:
+    st.session_state.pop(_weather_report_key(topic), None)
+    st.session_state.pop(_weather_question_key(topic), None)
+
+
 def _weather_place_key(topic: str) -> str:
     return f"weather_place::{topic}"
 
@@ -834,7 +844,7 @@ def _weather_where(place: str) -> str:
 
 def take_weather(topic: str, text: str) -> dict[str, str] | None:
     if not is_weather_question(text):
-        st.session_state.pop(_weather_report_key(topic), None)
+        _clear_weather_followup(topic)
         return None
     place = place_from_question(text)
     where = _weather_where(place)
@@ -894,7 +904,7 @@ def _openai_reply_failed(text: str) -> bool:
 
 def _weather_query_controls(model_label: str) -> dict[str, object]:
     controls: dict[str, object] = {
-        "max_completion_tokens": 80,
+        "max_completion_tokens": 200,
         "response_format": {"type": "json_object"},
     }
     if model_label == "GPT-5.6 Sol":
@@ -929,8 +939,10 @@ def decide_weather(text: str) -> bool | str:
     return verdict
 
 
-def fill_weather_query(model_label: str, model_id: str, text: str) -> str | None:
-    """Place for WeatherAPI, or None when the selected model did not return q."""
+def fill_weather_query(
+    model_label: str, model_id: str, text: str
+) -> WeatherRequest | str | None:
+    """Validated Weather API request, an OpenAI error, or None when JSON is rejected."""
     reply = openai_chat(
         model_id,
         [
@@ -944,7 +956,7 @@ def fill_weather_query(model_label: str, model_id: str, text: str) -> str | None
     )
     if _openai_reply_failed(reply):
         return reply.strip()
-    return parse_weather_query(reply)
+    return parse_weather_request(reply)
 
 
 def hold_for_advanced_weather(
@@ -964,7 +976,7 @@ def hold_for_advanced_weather(
         history.append({"role": "assistant", "content": verdict, "status": "done"})
         return True
     if not verdict:
-        st.session_state.pop(_weather_report_key(topic), None)
+        _clear_weather_followup(topic)
         return False
     model_label = model or st.session_state.get("rlhf_model") or ""
     model_id = RLHF_CATALOG.get("OpenAI", {}).get(model_label)
@@ -978,12 +990,10 @@ def hold_for_advanced_weather(
         )
         return True
     filled = fill_weather_query(model_label, model_id, text)
-    if _openai_reply_failed(filled or ""):
-        history.append(
-            {"role": "assistant", "content": filled or "", "status": "done"}
-        )
+    if isinstance(filled, str):
+        history.append({"role": "assistant", "content": filled, "status": "done"})
         return True
-    if not filled:
+    if not isinstance(filled, WeatherRequest):
         history.append(
             {
                 "role": "assistant",
@@ -995,7 +1005,8 @@ def hold_for_advanced_weather(
             }
         )
         return True
-    place = filled
+    place = filled.q
+    st.session_state[_weather_question_key(topic)] = filled.question
     blank = ensure_weather(topic) != "On"
     where = _weather_where(place)
     st.session_state[_weather_place_key(topic)] = place
@@ -1023,7 +1034,12 @@ def messages_with_weather(
     topic: str, messages: list[dict[str, str]]
 ) -> list[dict[str, str]]:
     report = st.session_state.get(_weather_report_key(topic), "")
-    note = WEATHER_ANSWER_NOTE if topic == "Advanced" else ""
+    note = ""
+    if topic == "Advanced":
+        question = st.session_state.get(_weather_question_key(topic), "")
+        note = WEATHER_ANSWER_NOTE
+        if question:
+            note = f"{note} Answer this question: {question}"
     return attach_reading(messages, report, note=note)
 
 
@@ -2493,6 +2509,31 @@ def chat_thread_html(
     return "".join(rows)
 
 
+def weather_info_html(*, rlhf: bool) -> str:
+    if rlhf:
+        copy = (
+            "<p>This calls WeatherAPI.com for the live weather of a city.</p>"
+            "<p>When it is on, a decision first checks whether the question is about weather. "
+            "If it is, the selected model corrects the place and fills the request. "
+            "Culcuta becomes Kolkata. The tool runs, and the answer uses that reading.</p>"
+            "<p>When it is off, the request still goes out with a blank key, "
+            "and the class sees the error WeatherAPI returns.</p>"
+        )
+    else:
+        copy = (
+            "<p>This calls WeatherAPI.com when the question contains a weather word.</p>"
+            "<p>When it is on, the tool runs for the place found in the question.</p>"
+            "<p>When it is off, the tool stays idle and this switch turns back on.</p>"
+        )
+    return (
+        "<span class='reason-card weather-card' role='tooltip'>"
+        "<span class='reason-card-body'>"
+        f"<span class='weather-card-copy'>{copy}</span>"
+        "</span>"
+        "</span>"
+    )
+
+
 def weather_html(topic: str, locked: bool, *, rlhf: bool) -> str:
     on = ensure_weather(topic) == "On"
     nxt = "Off" if on else "On"
@@ -2501,12 +2542,17 @@ def weather_html(topic: str, locked: bool, *, rlhf: bool) -> str:
         cls += " is-locked"
     attr = "data-rlhf-weather" if rlhf else "data-llama-weather"
     return (
+        "<span class='reason-hover'>"
         f"<span class='{cls}' role='button' tabindex='0' "
         f"{attr}='{nxt}' aria-pressed='{'true' if on else 'false'}' "
         f"aria-label='Weather API {('on' if on else 'off')}'>"
+        "<span class='reason-info' aria-hidden='true' "
+        "onclick='event.preventDefault(); event.stopPropagation();'>i</span>"
         "<span class='llama-api-name llama-api-name--words'>Weather API</span>"
         "<span class='llama-api-track' aria-hidden='true'><span class='llama-api-knob'></span></span>"
         f"<span class='llama-api-state'>{'On' if on else 'Off'}</span>"
+        "</span>"
+        f"{weather_info_html(rlhf=rlhf)}"
         "</span>"
     )
 
@@ -3721,7 +3767,7 @@ def render(
                 finished = True
             finally:
                 commit_assistant(history, topic, acc, company=company)
-                st.session_state.pop(_weather_report_key(topic), None)
+                _clear_weather_followup(topic)
                 st.session_state.rlhf_pending = None
                 st.session_state.rlhf_busy = False
             if finished:
@@ -3783,7 +3829,7 @@ def render(
                 finished = True
             finally:
                 commit_assistant(history, topic, acc)
-                st.session_state.pop(_weather_report_key(topic), None)
+                _clear_weather_followup(topic)
                 set_llama_run(topic, busy=False)
             if finished:
                 schedule_llama_control_reset(topic)
@@ -3830,7 +3876,7 @@ def render(
                             "status": "done",
                         }
                     )
-            st.session_state.pop(_weather_report_key(topic), None)
+            _clear_weather_followup(topic)
             st.session_state.rlhf_pending = None
             st.session_state.rlhf_busy = False
             if pending.get("type") != "files":
