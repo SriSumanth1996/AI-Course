@@ -1,6 +1,6 @@
 (function () {
-          if (window.__lectureChrome === 55) return;
-          window.__lectureChrome = 55;
+          if (window.__lectureChrome === 56) return;
+          window.__lectureChrome = 56;
           window.__crumbForward = true;
           window.__rlhfForward = true;
 
@@ -565,6 +565,18 @@
             if (llamaReason) {
               e.preventDefault();
               clickHidden("llama_reason_" + llamaScope() + "_" + llamaReason.getAttribute("data-llama-reason"));
+              return;
+            }
+            var rlhfWeather = e.target.closest("[data-rlhf-weather]");
+            if (rlhfWeather) {
+              e.preventDefault();
+              clickHidden("rlhf_weather_" + rlhfWeather.getAttribute("data-rlhf-weather"));
+              return;
+            }
+            var llamaWeather = e.target.closest("[data-llama-weather]");
+            if (llamaWeather) {
+              e.preventDefault();
+              clickHidden("llama_weather_" + llamaScope() + "_" + llamaWeather.getAttribute("data-llama-weather"));
               return;
             }
             var rlhfApiOpt = e.target.closest("[data-rlhf-api]");
