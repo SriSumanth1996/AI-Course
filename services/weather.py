@@ -6,6 +6,8 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
 from urllib.request import urlopen
 
+from pydantic import BaseModel, Field, ValidationError, field_validator
+
 from services.keys import weather_api_key
 
 _WEATHER_QUESTION = re.compile(
@@ -55,12 +57,31 @@ WEATHER_DECISION_PROMPT = (
 
 WEATHER_QUERY_PROMPT = (
     "This question is about weather. "
-    "Return only the JSON object the Weather API current request needs. "
-    "Use one field, q, set to the place named in the question. "
-    "Keep the place words the user wrote. "
-    "If the question names no place, set q to auto:ip. "
-    'Example: {"q": "Mumbai"}'
+    "Rephrase the user's words into one clear weather question and correct the place "
+    "to the real city name a weather service can look up. "
+    "A misspelling still names that city: culcuta is Kolkata, and cochin is Kochi. "
+    "Leave a place that is already a real city as that city. "
+    "Return only this JSON object, with q set to the corrected place and question "
+    "set to the rephrased weather question. "
+    "If the user names no place, set q to auto:ip. "
+    'Example for "wether in culcuta": '
+    '{"q": "Kolkata", "question": "What is the weather in Kolkata?"}'
 )
+
+
+class WeatherRequest(BaseModel):
+    """Validated current.json query after the model corrects the place."""
+
+    q: str = Field(min_length=1)
+    question: str = Field(min_length=1)
+
+    @field_validator("q", "question")
+    @classmethod
+    def collapsed(cls, value: str) -> str:
+        text = " ".join(value.split())
+        if not text:
+            raise ValueError("blank")
+        return text
 
 WEATHER_ANSWER_NOTE = (
     "This question is about weather. "
@@ -104,15 +125,21 @@ def parse_weather_decision(text: str) -> bool | None:
     return None
 
 
-def parse_weather_query(text: str) -> str | None:
+def parse_weather_request(text: str) -> WeatherRequest | None:
     payload = _json_object(text)
-    if not payload:
+    if payload is None:
         return None
-    place = payload.get("q")
-    if not isinstance(place, str):
+    try:
+        return WeatherRequest.model_validate(payload)
+    except ValidationError:
         return None
-    place = place.strip()
-    return place or None
+
+
+def parse_weather_query(text: str) -> str | None:
+    request = parse_weather_request(text)
+    if request is None:
+        return None
+    return request.q
 
 
 def place_from_question(text: str) -> str:
