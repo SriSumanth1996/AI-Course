@@ -181,6 +181,12 @@ COT_LEAD = (
 )
 
 
+def _approach_model(mode: str) -> str:
+    if mode == "Chain of Thought":
+        return COT_MODEL
+    return MODEL
+
+
 def _cot_out_key(mode: str) -> str:
     return f"prompting_out::cot::{mode}"
 
@@ -295,7 +301,7 @@ def render_cot(header_html: str) -> None:
     holder.html(_cot_answer_html(mode, "", busy=True))
     try:
         for token in stream_tokens(
-            COT_MODEL,
+            _approach_model(mode),
             [{"role": "user", "content": CART_PROMPTS[mode]}],
             kind="prompting",
             controls=_cot_controls(mode),
