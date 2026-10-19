@@ -251,6 +251,14 @@ def system_prompt(document: str = "", *, kind: str = "default") -> str:
         return INPUT_CONTEXT_PROMPT_WITH_DOC.strip()
     if kind == "prompting":
         return PROMPTING_SYSTEM.strip()
+    if kind == "guardrail_open":
+        from services.guardrails import OPEN_SYSTEM
+
+        return OPEN_SYSTEM
+    if kind == "guardrail_secure":
+        from services.guardrails import SECURE_SYSTEM
+
+        return SECURE_SYSTEM
     if not (document or "").strip():
         return SYSTEM_PROMPT.strip()
     names = document_filenames(document)
