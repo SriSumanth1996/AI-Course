@@ -69,6 +69,7 @@ SUB_LECTURES = [
     "Input context",
     "Post Training",
     "Prompting",
+    "Guardrails",
 ]
 TOPICS = {
     "Tokenisation": ["Tokenisation"],
@@ -85,10 +86,11 @@ TOPICS = {
         "Advanced",
     ],
     "Prompting": ["Zero-shot", "One-shot", "Few-shot", "Chain of Thought"],
+    "Guardrails": ["Without Guardrails", "With Guardrails"],
 }
 PICK_SUB = (
     "Pick Tokenisation, Inside the Transformer, Input context, Post Training, "
-    "or Prompting to open that section."
+    "Prompting, or Guardrails to open that section."
 )
 PICK_TOPIC = (
     "Pick Base or Advanced to open that section."
@@ -103,6 +105,7 @@ PICK_TOPIC_BY_SUB = {
     ),
     "Post Training": PICK_TOPIC,
     "Prompting": "Pick Zero-shot, One-shot, Few-shot, or Chain of Thought.",
+    "Guardrails": "Pick Without Guardrails or With Guardrails.",
 }
 
 TOKENISATION_TOPIC = "Tokenisation"
@@ -112,6 +115,10 @@ PROMPTING_SHOTS = {
     "Zero-shot": "zero",
     "One-shot": "one",
     "Few-shot": "few",
+}
+GUARDRAIL_TOPICS = {
+    "Without Guardrails": "open",
+    "With Guardrails": "secure",
 }
 ASSETS = Path(__file__).resolve().parent.parent / "assets"
 
@@ -3572,6 +3579,12 @@ def render(
 
         with st.container(key="lesson_block", gap=None):
             prompting.render_cot(header_html)
+        return
+    if topic in GUARDRAIL_TOPICS:
+        from services.guardrails import render as render_guardrails
+
+        with st.container(key="lesson_block", gap=None):
+            render_guardrails(header_html, GUARDRAIL_TOPICS[topic])
         return
     if is_rlhf:
         recover_rlhf_lock()
